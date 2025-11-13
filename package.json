@@ -1,0 +1,84 @@
+{
+  "name": "beauty-supply-pos",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/main/main.cjs",
+  "type": "module",
+  "author": "",
+  "license": "MIT",
+  "scripts": {
+    "dev": "concurrently -k \"npm:dev:main\" \"npm:dev:preload\" \"npm:dev:renderer\" \"npm:electron\"",
+    "dev:main": "tsup src/main/main.ts --format cjs --out-dir dist/main --target node18 --watch --external electron,electron-updater",
+    "dev:preload": "tsup src/preload/preload.ts --format cjs --out-dir dist/preload --target node18 --watch --external electron",
+    "dev:renderer": "vite",
+    "electron": "wait-on tcp:5173 && electron .",
+    "build": "tsup src/main/main.ts --format cjs --out-dir dist/main --target node18 --external electron,electron-updater && tsup src/preload/preload.ts --format cjs --out-dir dist/preload --target node18 --external electron && vite build",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint .",
+    "package": "electron-builder -w",
+    "db:generate": "drizzle-kit generate",
+    "db:check": "drizzle-kit check",
+    "db:migrate": "node ./scripts/migrate.mjs",
+    "seed:admin": "node ./scripts/seed-admin.mjs"
+  },
+  "build": {
+    "appId": "com.beauty.pos",
+    "productName": "Beauty POS",
+    "directories": {
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**",
+      "drizzle/**",
+      "package.json"
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "http://localhost/updates/"
+      }
+    ]
+  },
+  "dependencies": {
+    "@electron/remote": "^2.1.2",
+    "dotenv": "^16.4.5",
+    "drizzle-orm": "^0.33.0",
+    "electron-updater": "^6.1.8",
+    "pg": "^8.11.5",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.30",
+    "@types/pg": "^8.15.6",
+    "@types/react": "^18.2.73",
+    "@types/react-dom": "^18.2.22",
+    "@typescript-eslint/eslint-plugin": "^8.8.1",
+    "@typescript-eslint/parser": "^8.8.1",
+    "@vitejs/plugin-react": "^4.3.1",
+    "autoprefixer": "^10.4.19",
+    "concurrently": "^8.2.2",
+    "drizzle-kit": "^0.24.0",
+    "electron": "^30.0.9",
+    "electron-builder": "^24.13.3",
+    "eslint": "^9.12.0",
+    "postcss": "^8.4.38",
+    "tailwindcss": "^3.4.4",
+    "tsup": "^8.2.4",
+    "typescript": "^5.6.2",
+    "vite": "^5.4.2",
+    "wait-on": "^7.2.0"
+  }
+}
