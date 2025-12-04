@@ -8,6 +8,13 @@
       "when": 1763012135957,
       "tag": "0000_sleepy_sumo",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1764838742760,
+      "tag": "0001_boring_king_bedlam",
+      "breakpoints": true
     }
   ]
 }

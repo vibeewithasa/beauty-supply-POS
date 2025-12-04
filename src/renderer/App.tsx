@@ -1,152 +1,145 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Routes, Route, Navigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import LoginPage from "./app/page";
+import DashboardPage from "./app/dashboard/page";
+import SalesPage from "./app/sales/page";
+import CashPage from "./app/cash/page";
+import InventoryPage from "./app/inventory/page";
+import ReturnsPage from "./app/returns/page";
+import ReportsPage from "./app/reports/page";
+import UsersPage from "./app/users/page";
+import StockPage from "./app/stock/page";
+import ReceivePage from "./app/receive/page";
 
-type User = {
+interface User {
   id: number;
   name: string;
   role: "admin" | "vendor";
-};
-
-declare global {
-  interface Window {
-    api: {
-      auth: { login(pin: string): Promise<User | null> };
-      products: { findBySkuOrBarcode(q: string): Promise<any | null> };
-    };
-  }
 }
 
-function useBarcodeInput(onCode: (code: string) => void) {
-  const buffer = useRef<string>("");
-  const lastTime = useRef<number>(0);
-  const timeout = useRef<any>(null);
+// Protected Route Component
+function ProtectedRoute({
+  children,
+  requiredRole,
+}: {
+  children: React.ReactNode;
+  requiredRole?: "admin" | "vendor";
+}) {
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      const now = Date.now();
-      const delta = now - lastTime.current;
-      lastTime.current = now;
+    const userStr = sessionStorage.getItem("user");
+    if (userStr) {
+      setUser(JSON.parse(userStr));
+    }
+    setLoading(false);
+  }, []);
 
-      if (timeout.current) clearTimeout(timeout.current);
-      timeout.current = setTimeout(() => {
-        buffer.current = "";
-      }, 50);
+  if (loading) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
+      </div>
+    );
+  }
 
-      if (e.key === "Enter") {
-        if (buffer.current.length > 3) {
-          onCode(buffer.current);
-        }
-        buffer.current = "";
-        return;
-      }
-      if (delta < 30) {
-        buffer.current += e.key;
-      } else {
-        buffer.current = e.key;
-      }
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [onCode]);
+  if (!user) {
+    return <Navigate to="/" replace />;
+  }
+
+  if (requiredRole === "admin" && user.role !== "admin") {
+    return <Navigate to="/sales" replace />;
+  }
+
+  return <>{children}</>;
 }
 
-const Login: React.FC<{ onLogged: (u: User) => void }> = ({ onLogged }) => {
-  const [pin, setPin] = useState("");
-  const [error, setError] = useState<string | null>(null);
+function App() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <div className="bg-white p-6 rounded shadow w-80">
-        <h1 className="text-xl font-semibold mb-4">Acceso por PIN</h1>
-        <input
-          value={pin}
-          onChange={(e) => setPin(e.target.value)}
-          onKeyDown={async (e) => {
-            if (e.key === "Enter") {
-              setError(null);
-              const user = await window.api.auth.login(pin);
-              if (user) onLogged(user);
-              else setError("PIN inválido");
-            }
-          }}
-          type="password"
-          className="w-full border rounded p-2 mb-2"
-          placeholder="PIN"
-        />
-        {error && <div className="text-red-600 text-sm mb-2">{error}</div>}
-        <button
-          onClick={async () => {
-            setError(null);
-            const user = await window.api.auth.login(pin);
-            if (user) onLogged(user);
-            else setError("PIN inválido");
-          }}
-          className="w-full bg-blue-600 text-white py-2 rounded"
-        >
-          Entrar
-        </button>
-      </div>
-    </div>
+    <Routes>
+      <Route path="/" element={<LoginPage />} />
+
+      {/* Admin only routes */}
+      <Route
+        path="/dashboard"
+        element={
+          <ProtectedRoute requiredRole="admin">
+            <DashboardPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/inventory"
+        element={
+          <ProtectedRoute requiredRole="admin">
+            <InventoryPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/receive"
+        element={
+          <ProtectedRoute requiredRole="admin">
+            <ReceivePage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/reports"
+        element={
+          <ProtectedRoute requiredRole="admin">
+            <ReportsPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/users"
+        element={
+          <ProtectedRoute requiredRole="admin">
+            <UsersPage />
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Both admin and vendor routes */}
+      <Route
+        path="/sales"
+        element={
+          <ProtectedRoute>
+            <SalesPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/cash"
+        element={
+          <ProtectedRoute>
+            <CashPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/returns"
+        element={
+          <ProtectedRoute>
+            <ReturnsPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/stock"
+        element={
+          <ProtectedRoute>
+            <StockPage />
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Fallback */}
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   );
-};
-
-const SalesScreen: React.FC<{ user: User }> = ({ user }) => {
-  const [query, setQuery] = useState("");
-  const [found, setFound] = useState<any | null>(null);
-
-  useBarcodeInput(async (code) => {
-    const p = await window.api.products.findBySkuOrBarcode(code);
-    setFound(p);
-  });
-
-  return (
-    <div className="p-4">
-      <div className="flex items-center justify-between mb-4">
-        <div className="text-lg">
-          Usuario: {user.name} ({user.role})
-        </div>
-        <div className="font-semibold">Beauty POS</div>
-      </div>
-      <div className="flex gap-2 mb-2">
-        <input
-          className="border rounded p-2 flex-1"
-          placeholder="SKU o código de barras"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={async (e) => {
-            if (e.key === "Enter") {
-              const p = await window.api.products.findBySkuOrBarcode(query);
-              setFound(p);
-            }
-          }}
-        />
-        <button
-          className="bg-gray-800 text-white px-4 rounded"
-          onClick={async () => {
-            const p = await window.api.products.findBySkuOrBarcode(query);
-            setFound(p);
-          }}
-        >
-          Buscar
-        </button>
-      </div>
-      <div className="border rounded p-3 bg-white">
-        {found ? (
-          <pre className="text-sm whitespace-pre-wrap">
-            {JSON.stringify(found, null, 2)}
-          </pre>
-        ) : (
-          <div className="text-gray-500">
-            Escanea un código o escribe y presiona Enter…
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-
-const App: React.FC = () => {
-  const [user, setUser] = useState<User | null>(null);
-  if (!user) return <Login onLogged={setUser} />;
-  return <SalesScreen user={user} />;
-};
+}
 
 export default App;

@@ -1,0 +1,213 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Colores Primarios - Tema POS Estética */
+    --primary: 160 30% 17%; /* Verde Profundo #1a3a2a */
+    --primary-foreground: 0 0% 100%;
+
+    /* Colores Secundarios - Acentos */
+    --secondary: 330 25% 88%; /* Rosa Suave #e8d5e0 */
+    --secondary-foreground: 160 30% 17%;
+
+    /* Colores Neutrales */
+    --background: 0 0% 100%;
+    --foreground: 0 0% 10%;
+    --card: 0 0% 97%;
+    --card-foreground: 0 0% 10%;
+
+    /* Colores de Estado */
+    --success: 142 76% 36%; /* Verde éxito #10b981 */
+    --warning: 38 92% 50%; /* Amarillo advertencia #f59e0b */
+    --destructive: 0 84% 60%; /* Rojo error #ef4444 */
+    --destructive-foreground: 0 0% 100%;
+
+    /* Colores de Frontera e Input */
+    --border: 0 0% 90%;
+    --input: 0 0% 96%;
+    --muted: 0 0% 94%;
+    --muted-foreground: 0 0% 45%;
+
+    /* Colores POS Específicos */
+    --cash-success: 160 84% 39%; /* Verde caja #059669 */
+    --card-payment: 217 91% 60%; /* Azul tarjeta #3b82f6 */
+    --refund: 330 81% 60%; /* Rosa devolución #ec4899 */
+    --pending: 38 92% 50%; /* Amarillo pendiente #f59e0b */
+
+    /* Otros */
+    --accent: 330 25% 88%;
+    --accent-foreground: 160 30% 17%;
+    --ring: 160 30% 17%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --primary: 142 77% 73%; /* Verde claro en dark #34d399 */
+    --primary-foreground: 222 47% 11%;
+    --secondary: 271 91% 65%; /* Púrpura en dark #c084fc */
+    --secondary-foreground: 0 0% 97%;
+    --background: 222 47% 11%;
+    --foreground: 0 0% 97%;
+    --card: 217 33% 17%;
+    --card-foreground: 0 0% 97%;
+    --border: 215 28% 27%;
+    --input: 217 33% 17%;
+    --muted: 215 28% 27%;
+    --muted-foreground: 218 11% 65%;
+    --cash-success: 142 71% 45%;
+    --card-payment: 213 94% 68%;
+    --refund: 330 81% 76%;
+    --pending: 38 97% 72%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+
+  /* Improved typography for POS */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    @apply font-bold tracking-tight;
+  }
+
+  h1 {
+    @apply text-4xl leading-tight;
+  }
+  h2 {
+    @apply text-3xl leading-snug;
+  }
+  h3 {
+    @apply text-2xl leading-snug;
+  }
+
+  p {
+    @apply text-base leading-relaxed;
+  }
+}
+
+@layer components {
+  /* Botones POS */
+  .btn-pos-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-6 py-3 text-base font-semibold text-primary-foreground shadow-sm transition-all hover:bg-primary/90 active:scale-95 disabled:pointer-events-none disabled:opacity-50;
+  }
+
+  .btn-pos-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-border bg-background px-6 py-3 text-base font-semibold text-foreground shadow-sm transition-all hover:bg-muted active:scale-95 disabled:pointer-events-none disabled:opacity-50;
+  }
+
+  /* Cards POS */
+  .card-pos-stat {
+    @apply rounded-xl bg-card p-6 shadow-sm border border-border;
+  }
+
+  .card-pos-stat-label {
+    @apply text-sm font-medium text-muted-foreground;
+  }
+
+  .card-pos-stat-value {
+    @apply text-3xl font-bold text-foreground;
+  }
+
+  .card-pos-checkout {
+    @apply rounded-xl border-2 border-primary/20 bg-card p-6 shadow-md;
+  }
+
+  /* Badges POS */
+  .badge-pos-active {
+    @apply inline-flex items-center rounded-full bg-success/10 px-3 py-1 text-xs font-medium text-success;
+  }
+
+  .badge-pos-inactive {
+    @apply inline-flex items-center rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground;
+  }
+
+  .badge-pos-pending {
+    @apply inline-flex items-center rounded-full bg-warning/10 px-3 py-1 text-xs font-medium text-warning;
+  }
+
+  /* Inputs POS */
+  .input-pos {
+    @apply h-12 rounded-lg border border-border bg-input px-4 text-base shadow-xs transition-all placeholder:text-muted-foreground focus:border-ring focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  /* Tablas POS */
+  .table-pos {
+    @apply w-full border-collapse;
+  }
+
+  .table-pos thead {
+    @apply border-b border-border bg-muted/50;
+  }
+
+  .table-pos th {
+    @apply px-4 py-3 text-left text-sm font-semibold text-foreground;
+  }
+
+  .table-pos td {
+    @apply border-b border-border px-4 py-3 text-sm text-foreground;
+  }
+
+  .table-pos tbody tr:hover {
+    @apply bg-muted/30;
+  }
+}
+.btn-pos-success {
+  @apply inline-flex items-center justify-center rounded-md bg-green-600 px-6 py-3 text-base font-semibold text-white shadow-sm hover:bg-green-700 active:scale-95 transition-all duration-150;
+}
+
+.btn-pos-danger {
+  @apply inline-flex items-center justify-center rounded-md bg-red-600 px-6 py-3 text-base font-semibold text-white shadow-sm hover:bg-red-700 active:scale-95 transition-all duration-150;
+}
+
+/* Card components for displaying stats */
+.card-pos-stat {
+  @apply rounded-lg border border-border bg-card p-6 shadow-sm;
+}
+
+.card-pos-stat-value {
+  @apply text-3xl font-bold text-primary;
+}
+
+.card-pos-stat-label {
+  @apply text-sm font-medium text-muted-foreground;
+}
+
+/* Table styling for POS reports */
+.table-pos {
+  @apply w-full border-collapse text-sm;
+}
+
+.table-pos thead th {
+  @apply bg-primary text-primary-foreground px-4 py-3 text-left font-semibold border-b border-border;
+}
+
+.table-pos tbody td {
+  @apply px-4 py-3 border-b border-border;
+}
+
+.table-pos tbody tr:hover {
+  @apply bg-muted;
+}
+
+/* Status badges for different states */
+.badge-pos-active {
+  @apply inline-block rounded-full bg-green-100 px-3 py-1 text-xs font-semibold text-green-800;
+}
+
+.badge-pos-inactive {
+  @apply inline-block rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-800;
+}
+
+.badge-pos-pending {
+  @apply inline-block rounded-full bg-yellow-100 px-3 py-1 text-xs font-semibold text-yellow-800;
+}

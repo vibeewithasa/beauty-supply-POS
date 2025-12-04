@@ -38,14 +38,19 @@ async function createWindow() {
 
 app.on("ready", async () => {
   try {
+    console.log("Iniciando aplicación...");
     await createDbAndRunMigrations(app);
+    console.log("Base de datos lista.");
   } catch (err) {
     console.error("DB migration error:", err);
+    // Continue anyway - app can still work if DB is already set up
   }
 
   registerIpcHandlers();
+  console.log("IPC handlers registrados.");
 
   await createWindow();
+  console.log("Ventana creada.");
 
   try {
     autoUpdater.checkForUpdatesAndNotify();

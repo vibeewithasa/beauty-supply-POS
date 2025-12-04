@@ -65,6 +65,8 @@ export const inventoryMovements = pgTable("inventory_movements", {
 export const deletedProductsLog = pgTable("deleted_products_log", {
   id: serial("id").primaryKey(),
   productId: integer("product_id").notNull(),
+  sku: varchar("sku", { length: 64 }).notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
   deletedBy: integer("deleted_by").notNull(),
   reason: text("reason").notNull(),
   deletedAt: timestamp("deleted_at").defaultNow().notNull(),
@@ -75,7 +77,7 @@ export const priceChanges = pgTable("price_changes", {
   productId: integer("product_id").notNull(),
   oldPrice: numeric("old_price", { precision: 12, scale: 2 }).notNull(),
   newPrice: numeric("new_price", { precision: 12, scale: 2 }).notNull(),
-  userId: integer("user_id").notNull(),
+  changedBy: integer("changed_by").notNull(),
   reason: text("reason"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
@@ -88,16 +90,19 @@ export const cashSessions = pgTable("cash_sessions", {
     precision: 12,
     scale: 2,
   }).notNull(),
+  currentAmount: numeric("current_amount", {
+    precision: 12,
+    scale: 2,
+  }).notNull(),
+  finalAmount: numeric("final_amount", { precision: 12, scale: 2 }),
   status: cashSessionStatusEnum("status").notNull().default("open"),
   closedBy: integer("closed_by"),
   closedAt: timestamp("closed_at"),
-  expectedTotal: numeric("expected_total", { precision: 12, scale: 2 }),
-  realTotal: numeric("real_total", { precision: 12, scale: 2 }),
 });
 
 export const cashMovements = pgTable("cash_movements", {
   id: serial("id").primaryKey(),
-  cashSessionId: integer("cash_session_id").notNull(),
+  sessionId: integer("session_id").notNull(),
   userId: integer("user_id").notNull(),
   type: cashMovementEnum("type").notNull(),
   amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
@@ -107,11 +112,12 @@ export const cashMovements = pgTable("cash_movements", {
 
 export const sales = pgTable("sales", {
   id: serial("id").primaryKey(),
-  cashierId: integer("cashier_id").notNull(),
-  cashSessionId: integer("cash_session_id").notNull(),
+  userId: integer("user_id").notNull(),
+  cashSessionId: integer("cash_session_id"),
+  subtotal: numeric("subtotal", { precision: 12, scale: 2 }).notNull(),
+  tax: numeric("tax", { precision: 12, scale: 2 }).notNull(),
   total: numeric("total", { precision: 12, scale: 2 }).notNull(),
   paymentMethod: paymentMethodEnum("payment_method").notNull(),
-  cardAuthCode: varchar("card_auth_code", { length: 128 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -127,16 +133,17 @@ export const saleItems = pgTable("sale_items", {
 export const returns = pgTable("returns", {
   id: serial("id").primaryKey(),
   saleId: integer("sale_id").notNull(),
-  userId: integer("user_id").notNull(),
-  amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
+  totalRefund: numeric("total_refund", { precision: 12, scale: 2 }),
   reason: text("reason").notNull(),
+  processedBy: integer("processed_by").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 export const returnItems = pgTable("return_items", {
   id: serial("id").primaryKey(),
   returnId: integer("return_id").notNull(),
+  saleItemId: integer("sale_item_id").notNull(),
   productId: integer("product_id").notNull(),
   quantity: integer("quantity").notNull(),
-  unitPrice: numeric("unit_price", { precision: 12, scale: 2 }).notNull(),
+  refundAmount: numeric("refund_amount", { precision: 12, scale: 2 }).notNull(),
 });
