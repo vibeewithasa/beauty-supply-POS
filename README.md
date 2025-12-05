@@ -1,4 +1,4 @@
-# Beauty Supply POS 💄
+# Beauty Supply POS
 
 Un sistema de punto de venta profesional y 100% local para distribuidoras de estética. Desarrollado con **Electron + React + PostgreSQL**, funciona completamente offline sin conexión a internet.
 
