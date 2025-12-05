@@ -202,16 +202,25 @@ export function registerIpcHandlers() {
 
   ipcMain.handle("cash:getMovements", async (_e, sessionId: number) => {
     return await db
-      .select()
+      .select({
+        id: cashMovementsTable.id,
+        sessionId: cashMovementsTable.sessionId,
+        type: cashMovementsTable.type,
+        amount: cashMovementsTable.amount,
+        reason: cashMovementsTable.reason,
+        userId: cashMovementsTable.userId,
+        createdAt: cashMovementsTable.createdAt,
+        userName: usersTable.name,
+      })
       .from(cashMovementsTable)
+      .leftJoin(usersTable, eq(cashMovementsTable.userId, usersTable.id))
       .where(eq(cashMovementsTable.sessionId, sessionId))
       .orderBy(desc(cashMovementsTable.createdAt));
   });
 
   // ============= SALES =============
   ipcMain.handle("sales:create", async (_e, data: any) => {
-    const { items, subtotal, tax, total, paymentMethod, userId, sessionId } =
-      data;
+    const { items, total, paymentMethod, userId, sessionId } = data;
 
     const result = await db.transaction(async (tx) => {
       // Create sale
@@ -220,8 +229,6 @@ export function registerIpcHandlers() {
         .values({
           userId,
           cashSessionId: sessionId,
-          subtotal: subtotal.toString(),
-          tax: tax.toString(),
           total: total.toString(),
           paymentMethod,
         })
@@ -253,14 +260,35 @@ export function registerIpcHandlers() {
         });
       }
 
-      // Update cash session if payment is cash
-      if (paymentMethod === "cash" && sessionId) {
-        await tx
-          .update(cashSessionsTable)
-          .set({
-            currentAmount: sql`${cashSessionsTable.currentAmount} + ${total}`,
-          })
-          .where(eq(cashSessionsTable.id, sessionId));
+      // Update cash session and register movement
+      if (sessionId) {
+        if (paymentMethod === "cash") {
+          // Update current amount for cash payments
+          await tx
+            .update(cashSessionsTable)
+            .set({
+              currentAmount: sql`${cashSessionsTable.currentAmount} + ${total}`,
+            })
+            .where(eq(cashSessionsTable.id, sessionId));
+
+          // Register cash movement
+          await tx.insert(cashMovementsTable).values({
+            sessionId,
+            type: "IN" as any,
+            amount: total.toString(),
+            reason: `Venta #${sale.id} - Efectivo`,
+            userId,
+          });
+        } else {
+          // Register card payment as informational movement (amount 0)
+          await tx.insert(cashMovementsTable).values({
+            sessionId,
+            type: "IN" as any,
+            amount: "0",
+            reason: `Venta #${sale.id} - Tarjeta ($${total})`,
+            userId,
+          });
+        }
       }
 
       return sale;
@@ -552,5 +580,172 @@ export function registerIpcHandlers() {
         eq(deletedProductsLogTable.deletedBy, usersTable.id)
       )
       .orderBy(desc(deletedProductsLogTable.deletedAt));
+  });
+
+  // ============= DASHBOARD STATS =============
+  ipcMain.handle("dashboard:getStats", async () => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    // Ventas de hoy
+    const todaySalesResult = await db
+      .select({
+        total: sql<string>`COALESCE(SUM(${salesTable.total}::numeric), 0)`,
+        count: sql<number>`COUNT(*)::int`,
+      })
+      .from(salesTable)
+      .where(
+        and(
+          gte(salesTable.createdAt, today),
+          lte(salesTable.createdAt, tomorrow)
+        )
+      );
+
+    const todaySales = todaySalesResult[0];
+
+    // Ventas por método de pago hoy
+    const paymentMethodsResult = await db
+      .select({
+        paymentMethod: salesTable.paymentMethod,
+        total: sql<string>`COALESCE(SUM(${salesTable.total}::numeric), 0)`,
+      })
+      .from(salesTable)
+      .where(
+        and(
+          gte(salesTable.createdAt, today),
+          lte(salesTable.createdAt, tomorrow)
+        )
+      )
+      .groupBy(salesTable.paymentMethod);
+
+    // Productos totales activos
+    const productsResult = await db
+      .select({
+        total: sql<number>`COUNT(*)::int`,
+      })
+      .from(productsTable)
+      .where(eq(productsTable.status, "active"));
+
+    // Productos con stock bajo (menos de 10)
+    const lowStockResult = await db
+      .select({
+        total: sql<number>`COUNT(*)::int`,
+      })
+      .from(productsTable)
+      .where(
+        and(eq(productsTable.status, "active"), sql`${productsTable.stock} < 10`)
+      );
+
+    // Usuarios activos
+    const usersResult = await db
+      .select({
+        total: sql<number>`COUNT(*)::int`,
+      })
+      .from(usersTable)
+      .where(eq(usersTable.active, true));
+
+    // Devoluciones de hoy
+    const returnsResult = await db
+      .select({
+        total: sql<string>`COALESCE(SUM(${returnsTable.totalRefund}::numeric), 0)`,
+        count: sql<number>`COUNT(*)::int`,
+      })
+      .from(returnsTable)
+      .where(
+        and(
+          gte(returnsTable.createdAt, today),
+          lte(returnsTable.createdAt, tomorrow)
+        )
+      );
+
+    // Stock total
+    const stockResult = await db
+      .select({
+        total: sql<number>`COALESCE(SUM(${productsTable.stock}), 0)::int`,
+      })
+      .from(productsTable)
+      .where(eq(productsTable.status, "active"));
+
+    // Sesión de caja activa
+    const activeSession = await db
+      .select()
+      .from(cashSessionsTable)
+      .where(isNull(cashSessionsTable.closedAt))
+      .orderBy(desc(cashSessionsTable.openedAt))
+      .limit(1);
+
+    // Última venta con tiempo relativo calculado en el servidor
+    const lastSaleResult = await db
+      .select({
+        createdAt: salesTable.createdAt,
+      })
+      .from(salesTable)
+      .orderBy(desc(salesTable.createdAt))
+      .limit(1);
+
+    let lastSaleText = "N/A";
+    if (lastSaleResult[0]) {
+      const now = new Date();
+      const saleTime = new Date(lastSaleResult[0].createdAt);
+      const diffMs = now.getTime() - saleTime.getTime();
+      const diffMins = Math.floor(diffMs / 60000);
+
+      if (diffMins < 1) {
+        lastSaleText = "Justo ahora";
+      } else if (diffMins < 60) {
+        lastSaleText = `Hace ${diffMins} min`;
+      } else {
+        const diffHours = Math.floor(diffMins / 60);
+        if (diffHours < 24) {
+          lastSaleText = `Hace ${diffHours}h`;
+        } else {
+          const diffDays = Math.floor(diffHours / 24);
+          lastSaleText = `Hace ${diffDays} ${diffDays === 1 ? "día" : "días"}`;
+        }
+      }
+    }
+
+    // Ventas de la semana
+    const weekAgo = new Date(today);
+    weekAgo.setDate(weekAgo.getDate() - 7);
+
+    const weekSalesResult = await db
+      .select({
+        total: sql<string>`COALESCE(SUM(${salesTable.total}::numeric), 0)`,
+      })
+      .from(salesTable)
+      .where(gte(salesTable.createdAt, weekAgo));
+
+    return {
+      todaySales: {
+        total: todaySales?.total || "0",
+        count: todaySales?.count || 0,
+      },
+      paymentMethods: paymentMethodsResult.map((pm) => ({
+        method: pm.paymentMethod,
+        total: pm.total,
+      })),
+      products: {
+        total: productsResult[0]?.total || 0,
+        lowStock: lowStockResult[0]?.total || 0,
+      },
+      users: {
+        total: usersResult[0]?.total || 0,
+      },
+      returns: {
+        total: returnsResult[0]?.total || "0",
+        count: returnsResult[0]?.count || 0,
+      },
+      stock: {
+        total: stockResult[0]?.total || 0,
+      },
+      cashSession: activeSession[0] || null,
+      lastSale: lastSaleText,
+      weekSales: {
+        total: weekSalesResult[0]?.total || "0",
+      },
+    };
   });
 }

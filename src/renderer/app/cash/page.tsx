@@ -38,6 +38,7 @@ interface CashMovement {
   amount: string;
   reason: string;
   userId: number;
+  userName?: string;
   createdAt: Date;
 }
 
@@ -99,6 +100,20 @@ export default function CashPage() {
   // Calcular totales
   const currentAmount = session ? parseFloat(session.currentAmount) : 0;
   const initialAmount = session ? parseFloat(session.initialAmount) : 0;
+  
+  // Calcular ventas en efectivo y tarjeta
+  const salesCash = movements
+    .filter((m) => m.reason.includes("Venta") && m.reason.includes("Efectivo"))
+    .reduce((sum, m) => sum + parseFloat(m.amount), 0);
+  
+  // Extraer monto de ventas con tarjeta del texto del reason
+  const salesCard = movements
+    .filter((m) => m.reason.includes("Tarjeta"))
+    .reduce((sum, m) => {
+      // Extraer el monto del texto "Venta #X - Tarjeta ($XX.XX)"
+      const match = m.reason.match(/\$([0-9.]+)\)/);
+      return sum + (match ? parseFloat(match[1]) : 0);
+    }, 0);
 
   const handleOpenCash = async () => {
     if (!user) return;
@@ -130,14 +145,23 @@ export default function CashPage() {
     }
 
     try {
-      const movement = await window.api.cash.addMovement({
+      await window.api.cash.addMovement({
         sessionId: session.id,
         type: movementType,
         amount,
         reason: movementReason,
         userId: user.id,
       });
-      setMovements([movement, ...movements]);
+      
+      // Reload session and movements to get updated data with user names
+      const [updatedSession, updatedMovements] = await Promise.all([
+        window.api.cash.getActiveSession(),
+        window.api.cash.getMovements(session.id),
+      ]);
+      
+      if (updatedSession) setSession(updatedSession);
+      setMovements(updatedMovements);
+      
       setMovementAmount("");
       setMovementReason("");
       setShowMovementDialog(false);
@@ -146,9 +170,6 @@ export default function CashPage() {
           movementType === "IN" ? "entrada" : "salida"
         } registrado`
       );
-      // Reload session to update current amount
-      const updatedSession = await window.api.cash.getActiveSession();
-      if (updatedSession) setSession(updatedSession);
     } catch (error) {
       console.error("Error adding movement:", error);
       toast.error("Error al registrar movimiento");
@@ -199,7 +220,7 @@ export default function CashPage() {
         ) : (
           <div className="space-y-6">
             {/* Status */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
               <Card className="card-pos-stat">
                 <div>
                   <p className="card-pos-stat-label">Monto Inicial</p>
@@ -213,6 +234,22 @@ export default function CashPage() {
                   <p className="card-pos-stat-label">Total en Caja</p>
                   <p className="card-pos-stat-value mt-2">
                     ${currentAmount.toFixed(2)}
+                  </p>
+                </div>
+              </Card>
+              <Card className="card-pos-stat">
+                <div>
+                  <p className="card-pos-stat-label">Ventas Efectivo</p>
+                  <p className="card-pos-stat-value mt-2 text-green-600">
+                    ${salesCash.toFixed(2)}
+                  </p>
+                </div>
+              </Card>
+              <Card className="card-pos-stat">
+                <div>
+                  <p className="card-pos-stat-label">Ventas Tarjeta</p>
+                  <p className="card-pos-stat-value mt-2 text-blue-600">
+                    ${salesCard.toFixed(2)}
                   </p>
                 </div>
               </Card>
@@ -257,38 +294,54 @@ export default function CashPage() {
                     <tr>
                       <th>Hora</th>
                       <th>Tipo</th>
+                      <th>Usuario</th>
                       <th>Monto</th>
                       <th>Razón</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {movements.map((movement) => (
-                      <tr key={movement.id}>
-                        <td className="text-sm">
-                          {new Date(movement.createdAt).toLocaleTimeString()}
-                        </td>
-                        <td>
-                          <span
-                            className={`badge-pos-${
-                              movement.type === "IN" ? "active" : "pending"
+                    {movements.map((movement) => {
+                      const amount = parseFloat(movement.amount);
+                      const isCardSale = movement.reason.includes("Tarjeta");
+                      return (
+                        <tr key={movement.id}>
+                          <td className="text-sm">
+                            {new Date(movement.createdAt).toLocaleTimeString()}
+                          </td>
+                          <td>
+                            <span
+                              className={`badge-pos-${
+                                movement.type === "IN" ? "active" : "pending"
+                              }`}
+                            >
+                              {movement.type === "IN" ? "Ingreso" : "Retiro"}
+                            </span>
+                          </td>
+                          <td className="text-sm">
+                            {movement.userName || "N/A"}
+                          </td>
+                          <td
+                            className={`font-semibold ${
+                              isCardSale
+                                ? "text-blue-600"
+                                : movement.type === "IN"
+                                ? "text-green-600"
+                                : "text-red-600"
                             }`}
                           >
-                            {movement.type === "IN" ? "Ingreso" : "Retiro"}
-                          </span>
-                        </td>
-                        <td
-                          className={`font-semibold ${
-                            movement.type === "IN"
-                              ? "text-green-600"
-                              : "text-red-600"
-                          }`}
-                        >
-                          {movement.type === "IN" ? "+" : "-"}$
-                          {parseFloat(movement.amount).toFixed(2)}
-                        </td>
-                        <td className="text-sm">{movement.reason}</td>
-                      </tr>
-                    ))}
+                            {isCardSale ? (
+                              <span className="text-sm">Tarjeta</span>
+                            ) : (
+                              <>
+                                {movement.type === "IN" ? "+" : "-"}$
+                                {amount.toFixed(2)}
+                              </>
+                            )}
+                          </td>
+                          <td className="text-sm">{movement.reason}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </Card>

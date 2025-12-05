@@ -59,6 +59,9 @@ declare global {
         getSalesByDateRange(startDate: string, endDate: string): Promise<any[]>;
         getDeletedProducts(): Promise<any[]>;
       };
+      dashboard: {
+        getStats(): Promise<any>;
+      };
     };
   }
 }

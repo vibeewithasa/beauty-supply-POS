@@ -205,9 +205,7 @@ export default function SalesPage() {
     setCart(cart.filter((item) => item.productId !== productId));
   };
 
-  const subtotal = cart.reduce((sum, item) => sum + item.subtotal, 0);
-  const tax = subtotal * 0.15;
-  const total = subtotal + tax;
+  const total = cart.reduce((sum, item) => sum + item.subtotal, 0);
 
   const handleStartPayment = () => {
     if (!cashSession) {
@@ -229,8 +227,6 @@ export default function SalesPage() {
           unitPrice: item.unitPrice,
           subtotal: item.subtotal,
         })),
-        subtotal,
-        tax,
         total,
         paymentMethod,
         userId: user.id,
@@ -459,17 +455,7 @@ export default function SalesPage() {
             {cart.length > 0 && (
               <div className="border-t border-border p-6 space-y-4 bg-muted/30">
                 <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Subtotal:</span>
-                    <span className="font-semibold">
-                      ${subtotal.toFixed(2)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">IVA (15%):</span>
-                    <span className="font-semibold">${tax.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between text-lg font-bold border-t border-border pt-3 mt-3">
+                  <div className="flex justify-between text-lg font-bold">
                     <span>Total:</span>
                     <span className="text-primary text-2xl">
                       ${total.toFixed(2)}

@@ -15,6 +15,20 @@
       "when": 1764838742760,
       "tag": "0001_boring_king_bedlam",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1764913812744,
+      "tag": "0002_worthless_mulholland_black",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1764916307321,
+      "tag": "0003_aromatic_selene",
+      "breakpoints": true
     }
   ]
 }

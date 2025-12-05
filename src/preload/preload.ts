@@ -55,4 +55,7 @@ contextBridge.exposeInMainWorld("api", {
       ipcRenderer.invoke("reports:getSalesByDateRange", startDate, endDate),
     getDeletedProducts: () => ipcRenderer.invoke("reports:getDeletedProducts"),
   },
+  dashboard: {
+    getStats: () => ipcRenderer.invoke("dashboard:getStats"),
+  },
 });
