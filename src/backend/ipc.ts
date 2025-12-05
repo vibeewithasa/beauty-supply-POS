@@ -635,7 +635,10 @@ export function registerIpcHandlers() {
       })
       .from(productsTable)
       .where(
-        and(eq(productsTable.status, "active"), sql`${productsTable.stock} < 10`)
+        and(
+          eq(productsTable.status, "active"),
+          sql`${productsTable.stock} < 10`
+        )
       );
 
     // Usuarios activos

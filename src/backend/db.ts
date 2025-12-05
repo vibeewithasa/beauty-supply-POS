@@ -21,8 +21,10 @@ pool.on("connect", async (client) => {
     const minutes = Math.abs(offset % 60);
     const sign = hours >= 0 ? "+" : "-";
     const absHours = Math.abs(hours);
-    const timezone = `${sign}${absHours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
-    
+    const timezone = `${sign}${absHours.toString().padStart(2, "0")}:${minutes
+      .toString()
+      .padStart(2, "0")}`;
+
     await client.query(`SET timezone = '${timezone}'`);
     console.log(`PostgreSQL timezone configurado a: ${timezone}`);
   } catch (err) {

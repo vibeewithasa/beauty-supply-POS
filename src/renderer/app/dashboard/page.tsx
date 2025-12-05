@@ -86,25 +86,28 @@ export default function DashboardPage() {
 
   if (!user || loading) return null;
 
-  const todaySalesTotal = stats
-    ? parseFloat(stats.todaySales.total)
-    : 0;
+  const todaySalesTotal = stats ? parseFloat(stats.todaySales.total) : 0;
   const weekSalesTotal = stats ? parseFloat(stats.weekSales.total) : 0;
   const returnsTotal = stats ? parseFloat(stats.returns.total) : 0;
-  
-  const cashTotal = stats?.paymentMethods.find(pm => pm.method === "cash")?.total || "0";
-  const cardTotal = stats?.paymentMethods.find(pm => pm.method === "card")?.total || "0";
-  
-  const cashPercent = todaySalesTotal > 0 
-    ? ((parseFloat(cashTotal) / todaySalesTotal) * 100).toFixed(1)
-    : "0";
-  const cardPercent = todaySalesTotal > 0
-    ? ((parseFloat(cardTotal) / todaySalesTotal) * 100).toFixed(1)
-    : "0";
 
-  const avgTicket = stats && stats.todaySales.count > 0
-    ? (todaySalesTotal / stats.todaySales.count).toFixed(2)
-    : "0.00";
+  const cashTotal =
+    stats?.paymentMethods.find((pm) => pm.method === "cash")?.total || "0";
+  const cardTotal =
+    stats?.paymentMethods.find((pm) => pm.method === "card")?.total || "0";
+
+  const cashPercent =
+    todaySalesTotal > 0
+      ? ((parseFloat(cashTotal) / todaySalesTotal) * 100).toFixed(1)
+      : "0";
+  const cardPercent =
+    todaySalesTotal > 0
+      ? ((parseFloat(cardTotal) / todaySalesTotal) * 100).toFixed(1)
+      : "0";
+
+  const avgTicket =
+    stats && stats.todaySales.count > 0
+      ? (todaySalesTotal / stats.todaySales.count).toFixed(2)
+      : "0.00";
 
   return (
     <POSLayout>
@@ -204,7 +207,9 @@ export default function DashboardPage() {
                 <p className="text-sm text-muted-foreground mb-1">
                   Total de Productos
                 </p>
-                <p className="text-3xl font-bold">{stats?.products.total || 0}</p>
+                <p className="text-3xl font-bold">
+                  {stats?.products.total || 0}
+                </p>
               </div>
               <Package className="text-primary" size={32} />
             </div>

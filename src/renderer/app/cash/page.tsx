@@ -100,12 +100,12 @@ export default function CashPage() {
   // Calcular totales
   const currentAmount = session ? parseFloat(session.currentAmount) : 0;
   const initialAmount = session ? parseFloat(session.initialAmount) : 0;
-  
+
   // Calcular ventas en efectivo y tarjeta
   const salesCash = movements
     .filter((m) => m.reason.includes("Venta") && m.reason.includes("Efectivo"))
     .reduce((sum, m) => sum + parseFloat(m.amount), 0);
-  
+
   // Extraer monto de ventas con tarjeta del texto del reason
   const salesCard = movements
     .filter((m) => m.reason.includes("Tarjeta"))
@@ -152,16 +152,16 @@ export default function CashPage() {
         reason: movementReason,
         userId: user.id,
       });
-      
+
       // Reload session and movements to get updated data with user names
       const [updatedSession, updatedMovements] = await Promise.all([
         window.api.cash.getActiveSession(),
         window.api.cash.getMovements(session.id),
       ]);
-      
+
       if (updatedSession) setSession(updatedSession);
       setMovements(updatedMovements);
-      
+
       setMovementAmount("");
       setMovementReason("");
       setShowMovementDialog(false);
