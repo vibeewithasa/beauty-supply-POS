@@ -4,9 +4,9 @@
  */
 import { BusinessError } from "./errors.ts";
 import { parseId } from "./validation.ts";
+import { PIN_NEW_RE } from "./pin-hash.ts";
 
 const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
-const PIN_RE = /^\d{4}$/;
 
 export type Role = "admin" | "vendor";
 export type UserCreateInput = { name: string; role: Role; pin: string };
@@ -35,7 +35,8 @@ function role(v: unknown): Role {
 }
 
 function pin(v: unknown): string {
-  if (typeof v !== "string" || !PIN_RE.test(v)) throw new BusinessError("PIN_INVALIDO", "El PIN debe tener exactamente 4 dígitos");
+  // 6-8 digits for every new or changed PIN (provisional minimum). Existing 4-digit PINs keep working at login.
+  if (typeof v !== "string" || !PIN_NEW_RE.test(v)) throw new BusinessError("PIN_INVALIDO", "El PIN debe tener de 6 a 8 dígitos");
   return v;
 }
 

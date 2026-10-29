@@ -5,6 +5,10 @@ import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
 import { describeIpcError } from "@/lib/ipc-error";
 
+// 4-digit PINs of existing accounts still work; new PINs have 6 to 8 digits (enforced by the backend).
+const MIN_PIN = 4;
+const MAX_PIN = 8;
+
 export default function LoginPage() {
   const [pin, setPin] = useState("");
   const [error, setError] = useState("");
@@ -12,7 +16,7 @@ export default function LoginPage() {
   const navigate = useNavigate();
 
   const handlePinInput = (digit: string) => {
-    if (pin.length < 4) {
+    if (pin.length < MAX_PIN) {
       setPin(pin + digit);
       setError("");
     }
@@ -24,8 +28,8 @@ export default function LoginPage() {
   };
 
   const handleLogin = async () => {
-    if (!pin || pin.length !== 4) {
-      setError("Ingresa un PIN de 4 dígitos");
+    if (pin.length < MIN_PIN) {
+      setError("Ingresa tu PIN (mínimo 4 dígitos)");
       return;
     }
 
@@ -77,7 +81,7 @@ export default function LoginPage() {
             <div className="bg-muted rounded-lg p-4 text-center mb-4">
               <div className="text-4xl tracking-widest font-mono font-bold text-primary">
                 {"•".repeat(pin.length)}
-                {pin.length < 4 ? "○".repeat(4 - pin.length) : ""}
+                {pin.length < MIN_PIN ? "○".repeat(MIN_PIN - pin.length) : ""}
               </div>
             </div>
             {error && (
@@ -123,7 +127,7 @@ export default function LoginPage() {
 
           <Button
             onClick={handleLogin}
-            disabled={pin.length !== 4 || loading}
+            disabled={pin.length < MIN_PIN || loading}
             className="w-full btn-pos-primary h-14 text-lg font-bold disabled:opacity-50"
           >
             {loading ? "Ingresando..." : "Iniciar Sesión"}

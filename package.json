@@ -19,7 +19,7 @@
     "db:generate": "drizzle-kit generate",
     "db:check": "drizzle-kit check",
     "db:migrate": "node ./scripts/migrate.mjs",
-    "seed:admin": "node ./scripts/seed-admin.mjs",
+    "seed:admin": "node --experimental-strip-types --disable-warning=ExperimentalWarning ./scripts/seed-admin.mjs",
     "db:precheck": "node ./scripts/precheck-integrity.mjs",
     "test:unit": "node --experimental-strip-types --test \"e2e/unit/*.test.mjs\"",
     "test:security": "node e2e/run.mjs security",
@@ -28,6 +28,7 @@
     "test:catalog": "node e2e/run.mjs catalog",
     "test:returns": "node e2e/run.mjs returns",
     "test:hardening": "node e2e/run.mjs hardening",
+    "test:pin": "node e2e/run.mjs pin",
     "test:migrations": "node e2e/migrations.mjs",
     "test:all": "npm run test:unit && node e2e/run.mjs all && node e2e/migrations.mjs"
   },

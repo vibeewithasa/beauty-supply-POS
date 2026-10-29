@@ -2,7 +2,7 @@
 // administrator, serialized admin operations) and the login brute-force limiter. Runs the app with SMALL
 // login limits (see `env`); the production defaults are covered by unit tests (login-limiter).
 import path from "node:path";
-import { ROOT, APP_URL, ui, ipc, expect, sha256, containsSecret, connectRunDb, waitFor, sleep } from "../lib/harness.mjs";
+import { ROOT, APP_URL, ui, ipc, expect, verifyModern, isModernHash, containsSecret, connectRunDb, waitFor, sleep } from "../lib/harness.mjs";
 
 export const env = { POS_LOGIN_MAX_ATTEMPTS: "3", POS_LOGIN_LOCK_MS: "5000", POS_LOGIN_MAX_LOCK_MS: "5000" };
 const LOCK_MS = 5000;
@@ -110,11 +110,11 @@ export async function run(c) {
 
   // ================================================================== user administration
   await test("USR-01.valid_create_returns_only_public_fields_and_stores_a_hash", "integration", async () => {
-    const pin = await data.newPin(), pin2 = await data.newPin();
+    const pin = await data.newPin(6), pin2 = await data.newPin(8);
     const r = await createUser("  Ana Vendedora  ", "vendor", pin);
     expect(r.ok && J(Object.keys(r.v).sort()) === J(["id", "name", "role"]) && r.v.name === "Ana Vendedora" && r.v.role === "vendor", J(r));
     const row = await one("select * from users where id=$1", [r.v.id]);
-    expect(row.active === true && row.pin_hash === sha256(pin) && row.pin_hash !== pin, "stored hashed, active");
+    expect(row.active === true && isModernHash(row.pin_hash) && verifyModern(pin, row.pin_hash) && !row.pin_hash.includes(pin), "stored as a salted scrypt hash, active");
     const a2 = await createUser("Admin Dos", "admin", pin2);
     expect(a2.ok && a2.v.role === "admin", J(a2));
     const list = await call("api.users.getAll()");
@@ -122,8 +122,9 @@ export async function run(c) {
   });
   await test("USR-02.invalid_input_is_rejected_without_trace", "integration", async () => {
     const before = (await one("select count(*)::int n from users")).n;
-    const pin = await data.newPin();
+    const pin = await data.newPin(6);
     const cases = [
+      ["PIN_INVALIDO", { name: "ok", role: "vendor", pin: "1234" }], ["PIN_INVALIDO", { name: "ok", role: "vendor", pin: "246810121" }],
       ["NOMBRE_INVALIDO", { name: "", role: "vendor", pin }], ["NOMBRE_INVALIDO", { name: "   ", role: "vendor", pin }], ["NOMBRE_INVALIDO", { name: "x".repeat(121), role: "vendor", pin }],
       ["NOMBRE_INVALIDO", { name: "a\u0000b", role: "vendor", pin }], ["NOMBRE_INVALIDO", { name: 5, role: "vendor", pin }],
       ["ROL_INVALIDO", { name: "ok", role: "superuser", pin }], ["ROL_INVALIDO", { name: "ok", role: null, pin }], ["ROL_INVALIDO", { name: "ok", role: "ADMIN", pin }],
@@ -138,7 +139,7 @@ export async function run(c) {
     expect((await one("select count(*)::int n from users")).n === before, "nothing was created");
   });
   await test("USR-03.pin_duplicates_are_rejected_also_under_concurrency", "integration", async () => {
-    const p = await data.newPin(), q = await data.newPin();
+    const p = await data.newPin(6), q = await data.newPin(7);
     const a = await createUser("Dup A", "vendor", p), b = await createUser("Dup B", "vendor", q);
     expect(a.ok && b.ok, "setup");
     const dup = await createUser("Dup C", "vendor", p);
@@ -149,19 +150,19 @@ export async function run(c) {
     expect((await updateUser(a.v.id, { name: "Dup A", role: "vendor", pin: p })).ok, "keeping your own PIN is fine");
     expect((await call(`api.users.delete(${a.v.id})`)).ok, "deactivate A");
     expect(biz(await createUser("Dup D", "vendor", p), "PIN_EN_USO"), "a deactivated user's PIN stays reserved (reactivation can never create a duplicate)");
-    const fresh = await data.newPin();
+    const fresh = await data.newPin(8);
     const r = await settled(Array.from({ length: 4 }, (_, i) => `api.users.create(${J({ name: "Race " + i, role: "vendor", pin: fresh })})`));
     expect(r.ok && r.v.filter((x) => x.ok).length === 1 && r.v.filter((x) => !x.ok).every((x) => x.err.includes("[PIN_EN_USO]")), "4 concurrent creations, one PIN: " + J(r.v));
-    expect((await one("select count(*)::int n from users where pin_hash=$1", [sha256(fresh)])).n === 1, "exactly one row holds the PIN");
+    expect(r.v.filter((x) => x.ok).length === 1, "exactly one account was created for the PIN (salted hashes: the unique index alone could not tell)");
   });
   await test("USR-04.update_changes_only_allowed_fields_and_keeps_the_pin_when_omitted", "integration", async () => {
-    const pin = await data.newPin();
+    const pin = await data.newPin(6);
     const u = await createUser("Upd", "vendor", pin);
     const h0 = await hashOf(u.v.id);
     const r1 = await updateUser(u.v.id, { name: "Upd Renamed", role: "admin" });
     expect(r1.ok && r1.v.name === "Upd Renamed" && r1.v.role === "admin" && (await hashOf(u.v.id)) === h0, "no pin sent: hash unchanged " + J(r1));
-    const np = await data.newPin();
-    expect((await updateUser(u.v.id, { name: "Upd Renamed", role: "vendor", pin: np })).ok && (await hashOf(u.v.id)) === sha256(np), "new PIN stored hashed");
+    const np = await data.newPin(7);
+    expect((await updateUser(u.v.id, { name: "Upd Renamed", role: "vendor", pin: np })).ok && verifyModern(np, await hashOf(u.v.id)), "new PIN stored as a salted hash");
     expect(biz(await updateUser(u.v.id, { name: "x", role: "vendor", active: false }), "CAMPO_NO_PERMITIDO"), "active cannot be set through update");
     expect(biz(await updateUser(u.v.id, { role: "vendor" }), "NOMBRE_INVALIDO"), "name required");
     expect(biz(await updateUser(u.v.id, { name: "x" }), "ROL_INVALIDO"), "role required");

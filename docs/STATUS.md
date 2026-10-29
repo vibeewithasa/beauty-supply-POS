@@ -38,11 +38,19 @@ describes the early MVP and is intentionally not edited here.
 
 ## Known risks (not fixed)
 
-- **PIN security (blocks distribution):** PINs are 4 digits hashed with an **unsalted SHA-256**. The limiter slows
-  guessing in the app, but anyone who can read the database can recover every PIN instantly.
-  *Recommendation before distributing:* store `scrypt`/`argon2id` hashes with a per-user salt (new
-  `pin_algo`/`pin_salt` columns), verify legacy SHA-256 hashes on login and upgrade them in place, allow longer
-  PINs/passphrases, keep the global limiter, and keep the unique-PIN rule through a keyed lookup hash.
+- **PIN security (improved, still a risk):** new and changed PINs have 6 to 8 digits and are stored as **salted scrypt**
+  (`scrypt$N$r$p$salt$key`, N=2^14, r=8, p=1, 16-byte random salt per user, constant-time comparison;
+  `src/backend/pin-hash.ts`). Existing accounts keep their **4-digit unsalted SHA-256** hash until their first
+  successful login, which upgrades it in place (compare-and-swap, never blocks the login). Until each legacy user has
+  logged in once, their PIN is still SHA-256 in the database. A 6-8 digit PIN is still a small space: an attacker who
+  can read the database can brute-force it offline (scrypt only makes that slower), so the global login limiter and
+  protecting the database/host matter more than the hash. Login verifies against every active user (the PIN is the
+  only identifier), so its cost grows with the number of users. Logical PIN uniqueness (also for inactive users) is
+  enforced by the application under an advisory lock: salted hashes make the unique index on `pin_hash` useless for
+  that purpose (it remains as a harmless guard for legacy hashes). *Next steps:* longer passphrases or a username +
+  PIN login, force a PIN change for legacy accounts, raise the scrypt cost if the user count stays small.
+- **First administrator:** `npm run seed:admin` has no default PIN: type it twice in a terminal (not echoed) or set
+  `ADMIN_PIN` for that single command; it is never printed or logged.
 - **Packaged build is broken:** the renderer is built with absolute asset paths and `BrowserRouter`, which fail
   under `file://`. Needs `base: "./"` and `HashRouter`.
 - **Configuration in the installer:** `DATABASE_URL` is read from a `.env` that is not packaged; the installer

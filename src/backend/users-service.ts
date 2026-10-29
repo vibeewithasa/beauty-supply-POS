@@ -11,7 +11,7 @@ import { and, eq, ne, sql } from "drizzle-orm";
 import { db } from "./db";
 import { users as usersTable } from "./schema";
 import { BusinessError, pgErrorCode } from "./errors";
-import { hashPin } from "./auth";
+import { hashPin, verifyPin } from "./pin-hash";
 import { parseUserCreate, parseUserId, parseUserUpdate } from "./users-validation";
 
 // Keep in sync with e2e/suites/hardening.mjs (it holds this lock to force real races).
@@ -29,6 +29,20 @@ async function inAdminTransaction<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
     if (pgErrorCode(e) === "23505") throw new BusinessError("PIN_EN_USO", "Ese PIN no está disponible; elige otro");
     throw e;
   }
+}
+
+/**
+ * Logical PIN uniqueness. Salted hashes of the same PIN differ, so the unique index on pin_hash can no longer
+ * detect duplicates: the candidate PIN is verified against EVERY existing user, active or not (an inactive
+ * account's PIN stays reserved, so reactivating it can never create a duplicate). Callers hold the admin
+ * advisory lock, which serializes creations and PIN changes.
+ */
+async function assertPinAvailable(tx: Tx, pin: string, excludingId?: number) {
+  const all = await tx.select({ id: usersTable.id, pinHash: usersTable.pinHash }).from(usersTable);
+  const clashes = await Promise.all(
+    all.filter((u) => u.id !== excludingId).map((u) => verifyPin(pin, u.pinHash))
+  );
+  if (clashes.some(Boolean)) throw new BusinessError("PIN_EN_USO", "Ese PIN no está disponible; elige otro");
 }
 
 async function assertAnotherActiveAdmin(tx: Tx, excludingId: number) {
@@ -54,7 +68,8 @@ export async function listActiveUsers() {
 export async function createUser(data: unknown) {
   const u = parseUserCreate(data);
   return await inAdminTransaction(async (tx) => {
-    const [user] = await tx.insert(usersTable).values({ name: u.name, role: u.role, pinHash: hashPin(u.pin) }).returning(publicUser);
+    await assertPinAvailable(tx, u.pin);
+    const [user] = await tx.insert(usersTable).values({ name: u.name, role: u.role, pinHash: await hashPin(u.pin) }).returning(publicUser);
     return user;
   });
 }
@@ -67,7 +82,10 @@ export async function updateUser(idRaw: unknown, data: unknown) {
     if (!target) throw new BusinessError("USUARIO_NO_ENCONTRADO", "El usuario no existe");
     if (target.role === "admin" && u.role !== "admin" && target.active) await assertAnotherActiveAdmin(tx, id);
     const set: { name: string; role: "admin" | "vendor"; pinHash?: string } = { name: u.name, role: u.role };
-    if (u.pin !== null) set.pinHash = hashPin(u.pin);
+    if (u.pin !== null) {
+      await assertPinAvailable(tx, u.pin, id);
+      set.pinHash = await hashPin(u.pin);
+    }
     const [user] = await tx.update(usersTable).set(set).where(eq(usersTable.id, id)).returning(publicUser);
     return user;
   });

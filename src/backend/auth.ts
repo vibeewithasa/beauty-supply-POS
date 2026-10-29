@@ -1,4 +1,3 @@
-import crypto from "crypto";
 import path from "path";
 import { app, ipcMain } from "electron";
 import type { IpcMainInvokeEvent } from "electron";
@@ -9,7 +8,8 @@ import { SessionStore } from "./session-store";
 import { isTrustedFrame, isTrustedUrl } from "./sender-guard";
 import type { GuardOptions } from "./sender-guard";
 import { AuthError, BusinessError } from "./errors";
-import { guarded } from "./ipc-errors";
+import { describeUnexpected, guarded } from "./ipc-errors";
+import { PIN_LOGIN_RE, hashPin, isLegacyHash, verifyPin } from "./pin-hash";
 import { LoginLimiter, loadLimiterConfig } from "./login-limiter";
 import type { Role } from "../common/types";
 
@@ -28,10 +28,6 @@ const store = new SessionStore();
 // One limiter for the whole installation (the PIN space is tiny): another window cannot reset it.
 // POS_LOGIN_* overrides are honored only in development builds, never in a packaged app.
 const limiter = new LoginLimiter(loadLimiterConfig(app.isPackaged ? {} : process.env));
-
-export function hashPin(pin: string) {
-  return crypto.createHash("sha256").update(pin).digest("hex");
-}
 
 const guardOptions = (): GuardOptions => ({
   packaged: app.isPackaged,
@@ -112,6 +108,20 @@ export function secureHandle<A extends unknown[], R>(
   );
 }
 
+/**
+ * Transitional upgrade: a legacy SHA-256 hash is replaced by a salted scrypt hash right after a successful login.
+ * Compare-and-swap on the old hash, so a concurrent PIN change is never overwritten; a failure never blocks the
+ * login (it is logged redacted and retried at the next login).
+ */
+async function upgradeLegacyHash(userId: number, oldHash: string, pin: string) {
+  try {
+    const modern = await hashPin(pin);
+    await db.update(usersTable).set({ pinHash: modern }).where(and(eq(usersTable.id, userId), eq(usersTable.pinHash, oldHash)));
+  } catch (e) {
+    logError(describeUnexpected("auth:login (hash upgrade)", e, secrets()));
+  }
+}
+
 /** Public channels: auth:login, auth:me, auth:logout (same error boundary as the protected ones). */
 export function registerAuthHandlers() {
   const publicHandle = <R>(channel: string, fn: (event: IpcMainInvokeEvent, ...args: unknown[]) => Promise<R> | R) =>
@@ -126,25 +136,28 @@ export function registerAuthHandlers() {
       // generic about users, explicit about the lock; even a correct PIN is refused while locked
       throw new BusinessError("LOGIN_BLOQUEADO", `Demasiados intentos fallidos. Espera ${Math.ceil(state.retryAfterMs / 1000)} s.`);
     }
-    if (typeof pin !== "string") {
+    if (typeof pin !== "string" || !PIN_LOGIN_RE.test(pin)) {
       limiter.fail();
       return null;
     }
-    const rows = await db
-      .select({
-        id: usersTable.id,
-        name: usersTable.name,
-        role: usersTable.role,
-      })
+    // The PIN is the only identifier, and salted hashes cannot be looked up: verify against every active user
+    // (in parallel on the libuv pool). Exactly one match logs in; none or several (never expected) fail.
+    const candidates = await db
+      .select({ id: usersTable.id, name: usersTable.name, role: usersTable.role, pinHash: usersTable.pinHash })
       .from(usersTable)
-      .where(and(eq(usersTable.pinHash, hashPin(pin)), eq(usersTable.active, true)));
-    if (rows.length !== 1) {
+      .where(eq(usersTable.active, true));
+    const matches = (await Promise.all(candidates.map(async (u) => ((await verifyPin(pin, u.pinHash)) ? u : null)))).filter(
+      (u): u is (typeof candidates)[number] => u !== null
+    );
+    if (matches.length !== 1) {
       limiter.fail(); // unknown PIN, wrong PIN and inactive user are indistinguishable
       return null;
     }
+    const user = matches[0];
     limiter.succeed();
-    store.start(event.sender, rows[0].id, trustedUrl);
-    return rows[0];
+    if (isLegacyHash(user.pinHash)) await upgradeLegacyHash(user.id, user.pinHash, pin);
+    store.start(event.sender, user.id, trustedUrl);
+    return { id: user.id, name: user.name, role: user.role };
   });
 
   publicHandle("auth:me", async (event) => {

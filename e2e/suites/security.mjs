@@ -163,7 +163,7 @@ export async function run(c) {
     expect((await me()).role === "admin", "admin session");
   });
   await test("C2.admin_operations_authorized", "security", async () => {
-    const created = await ipc(page, "api.users.create({name:'E2E_SEC_VENDOR2',role:'vendor',pin:'" + (await data.newPin()) + "'})");
+    const created = await ipc(page, "api.users.create({name:'E2E_SEC_VENDOR2',role:'vendor',pin:'" + (await data.newPin(6)) + "'})");
     expect(created.ok, "create vendor: " + created.err);
     const upd = await ipc(page, `api.users.update(${created.v.id},{name:'E2E_SEC_VENDOR2',role:'vendor'})`);
     const list = await ipc(page, "api.users.getAll()");
@@ -180,7 +180,7 @@ export async function run(c) {
     expect((await db.query("select 1 from users where id=$1", [admin.id])).rowCount === 1, "admin still exists");
   });
   await test("C4.invalid_role_is_rejected", "security", async () => {
-    const r = await ipc(page, "api.users.create({name:'E2E_SEC_BADROLE',role:'superuser',pin:'" + (await data.newPin()) + "'})");
+    const r = await ipc(page, "api.users.create({name:'E2E_SEC_BADROLE',role:'superuser',pin:'" + (await data.newPin(6)) + "'})");
     expect(r.ok === false, "invalid role must be rejected");
   });
   await test("C5.non_auth_errors_do_not_log_the_user_out", "security", async () => {

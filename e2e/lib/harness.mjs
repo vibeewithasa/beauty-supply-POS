@@ -35,6 +35,23 @@ if (!["localhost", "127.0.0.1", "::1", "[::1]"].includes(base.hostname)) {
 }
 
 export const sha256 = (s) => crypto.createHash("sha256").update(s).digest("hex");
+
+// Modern PIN hash, same format as src/backend/pin-hash.ts (scrypt$N$r$p$salt$key). Kept here as an independent
+// implementation on purpose: the suites log in through the real application, which proves both agree.
+const SCRYPT = { N: 16384, r: 8, p: 1, keyLen: 32, saltLen: 16 };
+export function hashModern(pin) {
+  const salt = crypto.randomBytes(SCRYPT.saltLen);
+  const key = crypto.scryptSync(pin, salt, SCRYPT.keyLen, { N: SCRYPT.N, r: SCRYPT.r, p: SCRYPT.p, maxmem: 64 * 1024 * 1024 });
+  return ["scrypt", SCRYPT.N, SCRYPT.r, SCRYPT.p, salt.toString("base64url"), key.toString("base64url")].join("$");
+}
+export function verifyModern(pin, stored) {
+  const [alg, N, r, p, salt, key] = String(stored).split("$");
+  if (alg !== "scrypt") return false;
+  const want = Buffer.from(key, "base64url");
+  const got = crypto.scryptSync(pin, Buffer.from(salt, "base64url"), want.length, { N: Number(N), r: Number(r), p: Number(p), maxmem: 64 * 1024 * 1024 });
+  return crypto.timingSafeEqual(got, want);
+}
+export const isModernHash = (h) => /^scrypt\$\d+\$\d+\$\d+\$[\w-]+\$[\w-]+$/.test(String(h));
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 /** Removes the connection string / password from anything that gets logged or written to disk. */
 export function scrub(text) {
@@ -193,20 +210,23 @@ export async function launchApp(runDb, db, artifacts, extraEnv = {}) {
 // ---------------------------------------------------------------- synthetic data
 export function makeData(db, runId) {
   const usedPins = new Set();
-  const newPin = async () => {
+  // len 4 = legacy-style PIN (fixtures only); 6-8 = what the application accepts for new PINs
+  const newPin = async (len = 4) => {
     const existing = new Set((await db.query("select pin_hash from users")).rows.map((r) => r.pin_hash));
     for (;;) {
-      const p = String(crypto.randomInt(0, 10000)).padStart(4, "0");
+      const p = String(crypto.randomInt(0, 10 ** len)).padStart(len, "0");
       if (!existing.has(sha256(p)) && !usedPins.has(p)) { usedPins.add(p); return p; }
     }
   };
   return {
     newPin,
-    async user(label, role, { active = true } = {}) {
-      const pin = await newPin();
+    /** legacy (default): 4-digit PIN stored as unsalted SHA-256. modern: 6-8 digit PIN stored as salted scrypt. */
+    async user(label, role, { active = true, modern = false } = {}) {
+      const pin = modern ? await newPin(6 + crypto.randomInt(0, 3)) : await newPin();
       const name = `E2E_${runId}_${label}`;
-      const r = await db.query("insert into users(name,pin_hash,role,active) values($1,$2,$3,$4) returning id", [name, sha256(pin), role, active]);
-      return { id: r.rows[0].id, name, pin, role };
+      const hash = modern ? hashModern(pin) : sha256(pin);
+      const r = await db.query("insert into users(name,pin_hash,role,active) values($1,$2,$3,$4) returning id", [name, hash, role, active]);
+      return { id: r.rows[0].id, name, pin, role, modern };
     },
     async product(label, price, stock) {
       const sku = `E2E-${runId}-${label}`;

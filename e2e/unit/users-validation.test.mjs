@@ -3,18 +3,19 @@ import assert from "node:assert/strict";
 import { parseUserCreate, parseUserUpdate, parseUserId } from "../../src/backend/users-validation.ts";
 
 const code = (re) => (e) => re.test(e.message);
-const ok = (o = {}) => ({ name: "  Ana  ", role: "vendor", pin: "1234", ...o });
+const ok = (o = {}) => ({ name: "  Ana  ", role: "vendor", pin: "246810", ...o });
 
 test("create: normalizes a valid user", () => {
-  assert.deepEqual(parseUserCreate(ok()), { name: "Ana", role: "vendor", pin: "1234" });
+  assert.deepEqual(parseUserCreate(ok()), { name: "Ana", role: "vendor", pin: "246810" });
   assert.equal(parseUserCreate(ok({ role: "admin" })).role, "admin");
-  assert.equal(parseUserCreate(ok({ pin: "0000" })).pin, "0000", "format only: weak-PIN policy is a product decision");
+  assert.equal(parseUserCreate(ok({ pin: "000000" })).pin, "000000", "format only: weak-PIN policy is a product decision");
+  for (const len of ["246810", "2468101", "24681012"]) assert.equal(parseUserCreate(ok({ pin: len })).pin, len);
 });
 
 test("create: names, roles and pins", () => {
   for (const name of ["", "  ", "x".repeat(121), "a\u0000b", "a\nb", 5, null, undefined]) assert.throws(() => parseUserCreate(ok({ name })), code(/NOMBRE_INVALIDO/));
   for (const role of ["superuser", "ADMIN", "", null, undefined, 1]) assert.throws(() => parseUserCreate(ok({ role })), code(/ROL_INVALIDO/));
-  for (const pin of ["123", "99999", "abcd", "12 4", "١٢٣٤", 1234, null, undefined, "1234 ", " 1234"]) assert.throws(() => parseUserCreate(ok({ pin })), code(/PIN_INVALIDO/), String(pin));
+  for (const pin of ["1234", "123", "99999", "246810121", "abcd", "12 456", "١٢٣٤٥٦", 246810, null, undefined, "246810 ", " 246810"]) assert.throws(() => parseUserCreate(ok({ pin })), code(/PIN_INVALIDO/), String(pin));
 });
 
 test("create/update: only name, role and pin exist in the contract", () => {
@@ -32,8 +33,8 @@ test("update: pin is optional (undefined/null/empty keep the current one) but va
   assert.equal(parseUserUpdate({ name: "A", role: "admin" }).pin, null);
   assert.equal(parseUserUpdate({ name: "A", role: "admin", pin: "" }).pin, null);
   assert.equal(parseUserUpdate({ name: "A", role: "admin", pin: null }).pin, null);
-  assert.equal(parseUserUpdate({ name: "A", role: "admin", pin: "4321" }).pin, "4321");
-  assert.throws(() => parseUserUpdate({ name: "A", role: "admin", pin: "99" }), code(/PIN_INVALIDO/));
+  assert.equal(parseUserUpdate({ name: "A", role: "admin", pin: "654321" }).pin, "654321");
+  assert.throws(() => parseUserUpdate({ name: "A", role: "admin", pin: "1234" }), code(/PIN_INVALIDO/));
   assert.throws(() => parseUserUpdate({ role: "admin" }), code(/NOMBRE_INVALIDO/));
   assert.throws(() => parseUserUpdate({ name: "A" }), code(/ROL_INVALIDO/));
 });

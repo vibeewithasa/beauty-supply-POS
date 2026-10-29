@@ -49,6 +49,8 @@ test("redact removes URLs, parameters, hashes, password-like assignments and lis
   const t = redact("url=" + ["postgres:", "", "u:p@h/db"].join("/") + " pwd=hunter2 password: abc123 pin_hash=deadbeef\nparams: 1,2,3\nsecretvalue here", ["secretvalue"]);
   for (const leaked of ["u:p@h", "hunter2", "abc123", "deadbeef", "1,2,3", "secretvalue"]) assert.ok(!t.includes(leaked), leaked + " leaked in: " + t);
   assert.ok(redact("a".repeat(64)).includes("<hash>"));
+  const scrypt = "scrypt$16384$8$1$" + "A".repeat(22) + "$" + "B".repeat(43);
+  assert.ok(!redact("hash=" + scrypt + " x").includes("AAAAAAAA"), "scrypt hashes (and their salt) are redacted");
   assert.equal(redact("nothing sensitive"), "nothing sensitive");
 });
 

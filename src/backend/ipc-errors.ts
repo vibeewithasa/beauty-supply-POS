@@ -22,6 +22,7 @@ export function redact(text: string, secrets: string[] = []): string {
     .replace(/postgres(?:ql)?:\/\/\S+/gi, "postgres://***")
     .replace(/^(\s*params:).*$/gim, "$1 <redacted>")
     .replace(/\b[0-9a-f]{64}\b/gi, "<hash>")
+    .replace(/scrypt\$[^\s,"')]+/gi, "<hash>")
     .replace(/(password|passwd|pwd|pin_hash|pinHash)(["']?\s*[:=]\s*)["']?[^\s,"')]+/gi, "$1$2<redacted>");
 }
 
