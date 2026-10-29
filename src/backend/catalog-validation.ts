@@ -10,7 +10,6 @@ import { parseId, parseReason } from "./validation.ts";
 export const MAX_STOCK = 1_000_000;
 const SKU_RE = /^[A-Za-z0-9][A-Za-z0-9._\-/]{0,63}$/;
 const BARCODE_RE = /^[A-Za-z0-9._\-/]{1,128}$/;
-// eslint-disable-next-line no-control-regex
 const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
 
 export type ProductStatusInput = "active" | "inactive";

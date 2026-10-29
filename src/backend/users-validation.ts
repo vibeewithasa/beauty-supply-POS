@@ -5,7 +5,6 @@
 import { BusinessError } from "./errors.ts";
 import { parseId } from "./validation.ts";
 
-// eslint-disable-next-line no-control-regex
 const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
 const PIN_RE = /^\d{4}$/;
 

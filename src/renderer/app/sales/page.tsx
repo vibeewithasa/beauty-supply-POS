@@ -289,10 +289,6 @@ export default function SalesPage() {
     }
   };
 
-  const handlePrintReceipt = () => {
-    window.print();
-  };
-
   return (
     <POSLayout>
       <div className="p-6 h-full flex flex-col bg-gradient-to-b from-background to-muted/10">

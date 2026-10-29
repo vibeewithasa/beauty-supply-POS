@@ -1,4 +1,4 @@
-import { db, pool } from "./db";
+import { db } from "./db";
 import {
   products as productsTable,
   users as usersTable,
@@ -8,7 +8,6 @@ import {
   cashMovements as cashMovementsTable,
   inventoryMovements as inventoryMovementsTable,
   returns as returnsTable,
-  returnItems as returnItemsTable,
   deletedProductsLog as deletedProductsLogTable,
   priceChanges as priceChangesTable,
 } from "./schema";

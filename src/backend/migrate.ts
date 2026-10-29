@@ -1,5 +1,4 @@
 import path from "path";
-import { app as electronApp } from "electron";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { pool } from "./db";

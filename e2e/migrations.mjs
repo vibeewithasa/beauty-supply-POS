@@ -334,6 +334,46 @@ try {
   });
   fs.rmSync(pre6, { recursive: true, force: true });
 
+  // ------------------------------------------------------------ 3e. Drizzle drift and journal consistency
+  await test("MIG-10.no_drift_between_schema_ts_and_the_migration_history", "migration", async () => {
+    // generate against a COPY of drizzle/: if schema.ts differs from the last snapshot a new migration appears
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "e2e-drift-"));
+    try {
+      const out = path.join(tmp, "out");
+      fs.cpSync(MIGRATIONS, out, { recursive: true, filter: (p) => !p.includes(path.sep + "migrations") });
+      const before = fs.readdirSync(out).sort().join();
+      const cfg = path.join(tmp, "drizzle.drift.config.mjs");
+      fs.writeFileSync(cfg, `export default { dialect: "postgresql", schema: ${JSON.stringify(path.join(ROOT, "src/backend/schema.ts").split(path.sep).join("/"))}, out: ${JSON.stringify(path.relative(ROOT, out).split(path.sep).join("/"))} };\n`); // drizzle-kit joins "out" to the cwd, so it must be relative
+      const bin = path.join(ROOT, "node_modules/drizzle-kit/bin.cjs");
+      const gen = spawnSync(process.execPath, [bin, "generate", "--config", cfg, "--name=drift_probe"], { cwd: ROOT, encoding: "utf8" });
+      const text = scrub(gen.stdout + gen.stderr);
+      expect(/No schema changes/.test(text), "schema.ts and the last snapshot differ (drift): " + text.replace(/s+/g, " ").slice(-300));
+      expect(fs.readdirSync(out).sort().join() === before, "generate must not have produced a migration");
+      const chk = spawnSync(process.execPath, [bin, "check", "--config", cfg], { cwd: ROOT, encoding: "utf8" });
+      expect(chk.status === 0 && /Everything's fine/.test(chk.stdout), "drizzle-kit check: " + scrub(chk.stdout + chk.stderr).replace(/s+/g, " ").slice(-200));
+      return "schema.ts == snapshot " + String(JOURNAL - 1).padStart(4, "0") + "; drizzle-kit check is clean";
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+  });
+  await test("MIG-11.journal_sql_and_snapshots_are_consistent", "migration", async () => {
+    const entries = JSON.parse(fs.readFileSync(path.join(MIGRATIONS, "meta/_journal.json"), "utf8")).entries;
+    const snaps = [];
+    entries.forEach((e, i) => {
+      expect(e.idx === i, `journal idx ${e.idx} at position ${i}`);
+      expect(fs.existsSync(path.join(MIGRATIONS, e.tag + ".sql")), e.tag + ".sql is missing");
+      const sp = path.join(MIGRATIONS, "meta", String(i).padStart(4, "0") + "_snapshot.json");
+      expect(fs.existsSync(sp), "snapshot " + i + " is missing");
+      snaps.push(JSON.parse(fs.readFileSync(sp, "utf8")));
+      if (i > 0) expect(e.when > entries[i - 1].when, `journal timestamps must increase (${e.tag})`);
+    });
+    snaps.forEach((sn, i) => { if (i > 0) expect(sn.prevId === snaps[i - 1].id, `snapshot ${i} does not chain to snapshot ${i - 1}`); });
+    const inJournal = new Set(entries.map((e) => e.tag + ".sql"));
+    const orphans = fs.readdirSync(MIGRATIONS).filter((f) => f.endsWith(".sql") && !inJournal.has(f));
+    expect(orphans.length === 0, "SQL files not in the journal would never run: " + orphans.join());
+    const tags = entries.map((e) => e.tag);
+    expect(new Set(tags).size === tags.length && tags.every((t, i) => t.startsWith(String(i).padStart(4, "0") + "_")), "tags are sequential and unique");
+    return `${entries.length} migrations, ${snaps.length} snapshots chained, no orphan SQL at the top level`;
+  });
+
   // ------------------------------------------------------------ 4. startup must abort when migrations fail
   await test("MIG-05.app_refuses_to_run_when_migrations_fail", "migration", async () => {
     const broken = await newDb();

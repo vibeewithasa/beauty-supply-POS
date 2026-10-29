@@ -164,7 +164,7 @@ const DEFAULT_APP_ENV = { POS_LOGIN_MAX_ATTEMPTS: "1000" };
 export async function launchApp(runDb, db, artifacts, extraEnv = {}) {
   const env = { ...process.env, ...DEFAULT_APP_ENV, ...extraEnv, DATABASE_URL: urlFor(runDb, "e2e_app") };
   delete env.ELECTRON_RUN_AS_NODE;
-  let app = await _electron.launch({
+  const app = await _electron.launch({
     executablePath: path.join(ROOT, "node_modules/electron/dist/electron.exe"),
     args: ["."], cwd: ROOT, env, timeout: 60000,
   });
