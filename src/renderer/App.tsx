@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import LoginPage from "./app/page";
 import DashboardPage from "./app/dashboard/page";
@@ -28,13 +28,38 @@ function ProtectedRoute({
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const { pathname } = useLocation();
+
+  // The main process is the authority: sessionStorage is only a UI cache. It is asked on every
+  // navigation because Routes reuses this component instance between routes.
   useEffect(() => {
-    const userStr = sessionStorage.getItem("user");
-    if (userStr) {
-      setUser(JSON.parse(userStr));
-    }
-    setLoading(false);
-  }, []);
+    let cancelled = false;
+    setLoading(true);
+    window.api.auth
+      .me()
+      .then((me) => {
+        if (cancelled) return;
+        if (me) {
+          sessionStorage.setItem("user", JSON.stringify(me));
+        } else {
+          sessionStorage.removeItem("user");
+        }
+        setUser(me);
+      })
+      .catch(() => {
+        // me() failed for a reason other than "no session" (e.g. database/IPC error): do not log the
+        // user out. Keep the cached identity for display; the main process still enforces every call.
+        if (cancelled) return;
+        const cached = sessionStorage.getItem("user");
+        setUser(cached ? JSON.parse(cached) : null);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [pathname]);
 
   if (loading) {
     return (
@@ -55,9 +80,26 @@ function ProtectedRoute({
   return <>{children}</>;
 }
 
+// Sends the user to the login when the main process reports a lost/revoked session
+// (event raised by the preload only for "Sesión no válida", never for role or other errors).
+function SessionWatcher() {
+  const navigate = useNavigate();
+  useEffect(() => {
+    const onExpired = () => {
+      sessionStorage.removeItem("user");
+      navigate("/", { replace: true });
+    };
+    window.addEventListener("pos:session-expired", onExpired);
+    return () => window.removeEventListener("pos:session-expired", onExpired);
+  }, [navigate]);
+  return null;
+}
+
 function App() {
   return (
-    <Routes>
+    <>
+      <SessionWatcher />
+      <Routes>
       <Route path="/" element={<LoginPage />} />
 
       {/* Admin only routes */}
@@ -139,6 +181,7 @@ function App() {
       {/* Fallback */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </>
   );
 }
 

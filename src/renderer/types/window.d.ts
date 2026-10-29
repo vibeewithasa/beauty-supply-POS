@@ -9,26 +9,24 @@ declare global {
           name: string;
           role: "admin" | "vendor";
         } | null>;
+        me(): Promise<{
+          id: number;
+          name: string;
+          role: "admin" | "vendor";
+        } | null>;
+        logout(): Promise<boolean>;
       };
       products: {
         getAll(): Promise<any[]>;
         findBySkuOrBarcode(q: string): Promise<any | null>;
         create(data: any): Promise<any>;
         update(id: number, data: any): Promise<any>;
-        softDelete(
-          id: number,
-          reason: string,
-          userId: number
-        ): Promise<boolean>;
+        softDelete(id: number, reason: string): Promise<boolean>;
       };
       cash: {
         getActiveSession(): Promise<any | null>;
-        openSession(initialAmount: number, userId: number): Promise<any>;
-        closeSession(
-          sessionId: number,
-          realTotal: number,
-          userId: number
-        ): Promise<any>;
+        openSession(initialAmount: number): Promise<any>;
+        closeSession(sessionId: number, realTotal: number): Promise<any>;
         addMovement(data: any): Promise<any>;
         getMovements(sessionId: number): Promise<any[]>;
       };

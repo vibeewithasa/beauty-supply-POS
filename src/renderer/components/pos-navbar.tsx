@@ -32,7 +32,12 @@ export function POSNavbar() {
     }
   }, []);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await window.api.auth.logout();
+    } catch (error) {
+      console.error("Logout error:", error);
+    }
     sessionStorage.removeItem("user");
     sessionStorage.removeItem("cashBoxOpen");
     navigate("/");

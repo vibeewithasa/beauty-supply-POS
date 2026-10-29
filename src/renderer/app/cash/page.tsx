@@ -124,7 +124,7 @@ export default function CashPage() {
     }
 
     try {
-      const newSession = await window.api.cash.openSession(amount, user.id);
+      const newSession = await window.api.cash.openSession(amount);
       setSession(newSession);
       setMovements([]);
       setOpeningAmount("");
@@ -150,7 +150,6 @@ export default function CashPage() {
         type: movementType,
         amount,
         reason: movementReason,
-        userId: user.id,
       });
 
       // Reload session and movements to get updated data with user names
@@ -185,7 +184,7 @@ export default function CashPage() {
     }
 
     try {
-      await window.api.cash.closeSession(session.id, actualAmount_num, user.id);
+      await window.api.cash.closeSession(session.id, actualAmount_num);
       const difference = actualAmount_num - currentAmount;
       setSession(null);
       setMovements([]);

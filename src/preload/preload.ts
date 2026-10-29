@@ -1,61 +1,76 @@
 import { contextBridge, ipcRenderer } from "electron";
 
+// Every call goes through here so a lost session is handled in one place. The main process answers
+// "Sesión no válida" only when there is no session or it was revoked (see src/backend/auth.ts); that
+// signals the renderer to go back to the login. Role denials ("No autorizado"), DB or network errors
+// do NOT trigger it.
+function invoke(channel: string, ...args: unknown[]) {
+  return ipcRenderer.invoke(channel, ...args).catch((err: unknown) => {
+    if (channel !== "auth:login" && /Sesión no válida/.test(String((err as Error)?.message ?? err))) {
+      window.dispatchEvent(new Event("pos:session-expired"));
+    }
+    throw err;
+  });
+}
+
 contextBridge.exposeInMainWorld("api", {
   auth: {
-    login: (pin: string) => ipcRenderer.invoke("auth:login", pin),
+    login: (pin: string) => invoke("auth:login", pin),
+    me: () => invoke("auth:me"),
+    logout: () => invoke("auth:logout"),
   },
   products: {
-    getAll: () => ipcRenderer.invoke("products:getAll"),
+    getAll: () => invoke("products:getAll"),
     findBySkuOrBarcode: (q: string) =>
-      ipcRenderer.invoke("products:findBySkuOrBarcode", q),
-    create: (data: any) => ipcRenderer.invoke("products:create", data),
+      invoke("products:findBySkuOrBarcode", q),
+    create: (data: any) => invoke("products:create", data),
     update: (id: number, data: any) =>
-      ipcRenderer.invoke("products:update", id, data),
-    softDelete: (id: number, reason: string, userId: number) =>
-      ipcRenderer.invoke("products:softDelete", id, reason, userId),
+      invoke("products:update", id, data),
+    softDelete: (id: number, reason: string) =>
+      invoke("products:softDelete", id, reason),
   },
   cash: {
-    getActiveSession: () => ipcRenderer.invoke("cash:getActiveSession"),
-    openSession: (initialAmount: number, userId: number) =>
-      ipcRenderer.invoke("cash:openSession", initialAmount, userId),
-    closeSession: (sessionId: number, realTotal: number, userId: number) =>
-      ipcRenderer.invoke("cash:closeSession", sessionId, realTotal, userId),
-    addMovement: (data: any) => ipcRenderer.invoke("cash:addMovement", data),
+    getActiveSession: () => invoke("cash:getActiveSession"),
+    openSession: (initialAmount: number) =>
+      invoke("cash:openSession", initialAmount),
+    closeSession: (sessionId: number, realTotal: number) =>
+      invoke("cash:closeSession", sessionId, realTotal),
+    addMovement: (data: any) => invoke("cash:addMovement", data),
     getMovements: (sessionId: number) =>
-      ipcRenderer.invoke("cash:getMovements", sessionId),
+      invoke("cash:getMovements", sessionId),
   },
   sales: {
-    create: (data: any) => ipcRenderer.invoke("sales:create", data),
-    getAll: () => ipcRenderer.invoke("sales:getAll"),
-    getById: (id: number) => ipcRenderer.invoke("sales:getById", id),
+    create: (data: any) => invoke("sales:create", data),
+    getAll: () => invoke("sales:getAll"),
+    getById: (id: number) => invoke("sales:getById", id),
   },
   returns: {
-    create: (data: any) => ipcRenderer.invoke("returns:create", data),
-    getAll: () => ipcRenderer.invoke("returns:getAll"),
+    create: (data: any) => invoke("returns:create", data),
+    getAll: () => invoke("returns:getAll"),
   },
   users: {
-    getAll: () => ipcRenderer.invoke("users:getAll"),
-    create: (data: any) => ipcRenderer.invoke("users:create", data),
+    getAll: () => invoke("users:getAll"),
+    create: (data: any) => invoke("users:create", data),
     update: (id: number, data: any) =>
-      ipcRenderer.invoke("users:update", id, data),
-    delete: (id: number) => ipcRenderer.invoke("users:delete", id),
+      invoke("users:update", id, data),
+    delete: (id: number) => invoke("users:delete", id),
   },
   inventory: {
     getMovements: (productId?: number) =>
-      ipcRenderer.invoke("inventory:getMovements", productId),
+      invoke("inventory:getMovements", productId),
     addMovement: (data: any) =>
-      ipcRenderer.invoke("inventory:addMovement", data),
+      invoke("inventory:addMovement", data),
   },
   priceChanges: {
-    create: (data: any) => ipcRenderer.invoke("priceChanges:create", data),
-    getAll: () => ipcRenderer.invoke("priceChanges:getAll"),
+    create: (data: any) => invoke("priceChanges:create", data),
+    getAll: () => invoke("priceChanges:getAll"),
   },
   reports: {
     getSalesByDateRange: (startDate: string, endDate: string) =>
-      ipcRenderer.invoke("reports:getSalesByDateRange", startDate, endDate),
-    getDeletedProducts: () => ipcRenderer.invoke("reports:getDeletedProducts"),
+      invoke("reports:getSalesByDateRange", startDate, endDate),
+    getDeletedProducts: () => invoke("reports:getDeletedProducts"),
   },
   dashboard: {
-    getStats: () => ipcRenderer.invoke("dashboard:getStats"),
+    getStats: () => invoke("dashboard:getStats"),
   },
 });

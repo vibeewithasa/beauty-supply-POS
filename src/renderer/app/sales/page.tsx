@@ -229,7 +229,6 @@ export default function SalesPage() {
         })),
         total,
         paymentMethod,
-        userId: user.id,
         sessionId: cashSession.id,
       };
 

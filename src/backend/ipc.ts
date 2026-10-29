@@ -1,4 +1,3 @@
-import { ipcMain } from "electron";
 import { db, pool } from "./db";
 import {
   products as productsTable,
@@ -14,30 +13,60 @@ import {
   priceChanges as priceChangesTable,
 } from "./schema";
 import { eq, or, and, desc, sql, gte, lte, isNull } from "drizzle-orm";
-import crypto from "crypto";
+import { hashPin, registerAuthHandlers, secureHandle } from "./auth";
+import type { Access, IpcContext } from "./auth";
 
-function hashPin(pin: string) {
-  return crypto.createHash("sha256").update(pin).digest("hex");
+// Access policy for every protected channel. A channel without an entry cannot
+// be registered (deny by default). Public channels (auth:*) live in auth.ts.
+const ACCESS: Record<string, Access> = {
+  "products:getAll": "authenticated",
+  "products:findBySkuOrBarcode": "authenticated",
+  "products:create": "admin",
+  "products:update": "admin",
+  "products:softDelete": "admin",
+  "cash:getActiveSession": "authenticated",
+  "cash:openSession": "authenticated",
+  "cash:closeSession": "authenticated",
+  "cash:addMovement": "authenticated",
+  "cash:getMovements": "authenticated",
+  "sales:create": "authenticated",
+  // PRODUCT DECISION PENDING: should vendors read the full sales history and process returns?
+  // (sales:getAll, sales:getById, returns:create, returns:getAll are open to any authenticated user for now.)
+  "sales:getAll": "authenticated",
+  "sales:getById": "authenticated",
+  "returns:create": "authenticated",
+  "returns:getAll": "authenticated",
+  "users:getAll": "admin",
+  "users:create": "admin",
+  "users:update": "admin",
+  "users:delete": "admin",
+  "inventory:getMovements": "admin",
+  "inventory:addMovement": "admin",
+  "priceChanges:create": "admin",
+  "priceChanges:getAll": "admin",
+  "reports:getSalesByDateRange": "admin",
+  "reports:getDeletedProducts": "admin",
+  "dashboard:getStats": "admin",
+};
+
+function handle<A extends unknown[], R>(
+  channel: string,
+  fn: (ctx: IpcContext, ...args: A) => Promise<R> | R
+) {
+  const access = ACCESS[channel];
+  if (!access) throw new Error("Sin política de acceso para " + channel);
+  secureHandle(channel, access, fn);
+}
+
+function assertRole(role: unknown): asserts role is "admin" | "vendor" {
+  if (role !== "admin" && role !== "vendor") throw new Error("Rol inválido");
 }
 
 export function registerIpcHandlers() {
-  // ============= AUTH =============
-  ipcMain.handle("auth:login", async (_e, pin: string) => {
-    const pinHash = hashPin(pin);
-    const rows = await db
-      .select({
-        id: usersTable.id,
-        name: usersTable.name,
-        role: usersTable.role,
-      })
-      .from(usersTable)
-      .where(eq(usersTable.pinHash, pinHash));
-    if (rows.length === 1) return rows[0];
-    return null;
-  });
+  registerAuthHandlers();
 
   // ============= PRODUCTS =============
-  ipcMain.handle("products:getAll", async () => {
+  handle("products:getAll", async () => {
     return await db
       .select()
       .from(productsTable)
@@ -45,7 +74,7 @@ export function registerIpcHandlers() {
       .orderBy(productsTable.name);
   });
 
-  ipcMain.handle("products:findBySkuOrBarcode", async (_e, q: string) => {
+  handle("products:findBySkuOrBarcode", async (ctx, q: string) => {
     const rows = await db
       .select()
       .from(productsTable)
@@ -59,7 +88,7 @@ export function registerIpcHandlers() {
     return rows[0] ?? null;
   });
 
-  ipcMain.handle("products:create", async (_e, data: any) => {
+  handle("products:create", async (ctx, data: any) => {
     const processedData = {
       ...data,
       price:
@@ -72,7 +101,7 @@ export function registerIpcHandlers() {
     return product;
   });
 
-  ipcMain.handle("products:update", async (_e, id: number, data: any) => {
+  handle("products:update", async (ctx, id: number, data: any) => {
     const processedData = {
       ...data,
       ...(data.price && {
@@ -88,9 +117,10 @@ export function registerIpcHandlers() {
     return product;
   });
 
-  ipcMain.handle(
+  handle(
     "products:softDelete",
-    async (_e, id: number, reason: string, userId: number) => {
+    async (ctx, id: number, reason: string) => {
+      const userId = ctx.user.id;
       const [product] = await db
         .select()
         .from(productsTable)
@@ -131,7 +161,7 @@ export function registerIpcHandlers() {
   );
 
   // ============= CASH SESSIONS =============
-  ipcMain.handle("cash:getActiveSession", async () => {
+  handle("cash:getActiveSession", async () => {
     const [session] = await db
       .select()
       .from(cashSessionsTable)
@@ -141,9 +171,10 @@ export function registerIpcHandlers() {
     return session ?? null;
   });
 
-  ipcMain.handle(
+  handle(
     "cash:openSession",
-    async (_e, initialAmount: number, userId: number) => {
+    async (ctx, initialAmount: number) => {
+      const userId = ctx.user.id;
       const [session] = await db
         .insert(cashSessionsTable)
         .values({
@@ -156,9 +187,10 @@ export function registerIpcHandlers() {
     }
   );
 
-  ipcMain.handle(
+  handle(
     "cash:closeSession",
-    async (_e, sessionId: number, realTotal: number, userId: number) => {
+    async (ctx, sessionId: number, realTotal: number) => {
+      const userId = ctx.user.id;
       const [session] = await db
         .update(cashSessionsTable)
         .set({
@@ -172,8 +204,9 @@ export function registerIpcHandlers() {
     }
   );
 
-  ipcMain.handle("cash:addMovement", async (_e, data: any) => {
-    const { sessionId, type, amount, reason, userId } = data;
+  handle("cash:addMovement", async (ctx, data: any) => {
+    const { sessionId, type, amount, reason } = data;
+    const userId = ctx.user.id;
 
     const [movement] = await db
       .insert(cashMovementsTable)
@@ -200,7 +233,7 @@ export function registerIpcHandlers() {
     return movement;
   });
 
-  ipcMain.handle("cash:getMovements", async (_e, sessionId: number) => {
+  handle("cash:getMovements", async (ctx, sessionId: number) => {
     return await db
       .select({
         id: cashMovementsTable.id,
@@ -219,8 +252,9 @@ export function registerIpcHandlers() {
   });
 
   // ============= SALES =============
-  ipcMain.handle("sales:create", async (_e, data: any) => {
-    const { items, total, paymentMethod, userId, sessionId } = data;
+  handle("sales:create", async (ctx, data: any) => {
+    const { items, total, paymentMethod, sessionId } = data;
+    const userId = ctx.user.id;
 
     const result = await db.transaction(async (tx) => {
       // Create sale
@@ -297,7 +331,7 @@ export function registerIpcHandlers() {
     return result;
   });
 
-  ipcMain.handle("sales:getAll", async () => {
+  handle("sales:getAll", async () => {
     return await db
       .select()
       .from(salesTable)
@@ -305,7 +339,7 @@ export function registerIpcHandlers() {
       .limit(100);
   });
 
-  ipcMain.handle("sales:getById", async (_e, id: number) => {
+  handle("sales:getById", async (ctx, id: number) => {
     const [sale] = await db
       .select()
       .from(salesTable)
@@ -331,8 +365,9 @@ export function registerIpcHandlers() {
   });
 
   // ============= RETURNS =============
-  ipcMain.handle("returns:create", async (_e, data: any) => {
-    const { saleId, items, reason, userId } = data;
+  handle("returns:create", async (ctx, data: any) => {
+    const { saleId, items, reason } = data;
+    const userId = ctx.user.id;
 
     const result = await db.transaction(async (tx) => {
       const [returnRecord] = await tx
@@ -390,7 +425,7 @@ export function registerIpcHandlers() {
     return result;
   });
 
-  ipcMain.handle("returns:getAll", async () => {
+  handle("returns:getAll", async () => {
     return await db
       .select()
       .from(returnsTable)
@@ -399,7 +434,7 @@ export function registerIpcHandlers() {
   });
 
   // ============= USERS =============
-  ipcMain.handle("users:getAll", async () => {
+  handle("users:getAll", async () => {
     return await db
       .select({
         id: usersTable.id,
@@ -411,8 +446,9 @@ export function registerIpcHandlers() {
       .orderBy(usersTable.name);
   });
 
-  ipcMain.handle("users:create", async (_e, data: any) => {
+  handle("users:create", async (ctx, data: any) => {
     const { name, role, pin } = data;
+    assertRole(role);
     const pinHash = hashPin(pin);
     const [user] = await db
       .insert(usersTable)
@@ -425,7 +461,8 @@ export function registerIpcHandlers() {
     return user;
   });
 
-  ipcMain.handle("users:update", async (_e, id: number, data: any) => {
+  handle("users:update", async (ctx, id: number, data: any) => {
+    assertRole(data.role);
     const updateData: any = { name: data.name, role: data.role };
     if (data.pin) {
       updateData.pinHash = hashPin(data.pin);
@@ -442,13 +479,14 @@ export function registerIpcHandlers() {
     return user;
   });
 
-  ipcMain.handle("users:delete", async (_e, id: number) => {
+  handle("users:delete", async (ctx, id: number) => {
+    if (id === ctx.user.id) throw new Error("No puedes eliminar tu propia cuenta");
     await db.delete(usersTable).where(eq(usersTable.id, id));
     return true;
   });
 
   // ============= INVENTORY =============
-  ipcMain.handle("inventory:getMovements", async (_e, productId?: number) => {
+  handle("inventory:getMovements", async (ctx, productId?: number) => {
     const query = db
       .select({
         id: inventoryMovementsTable.id,
@@ -479,8 +517,9 @@ export function registerIpcHandlers() {
     return await query;
   });
 
-  ipcMain.handle("inventory:addMovement", async (_e, data: any) => {
-    const { productId, type, amount, reason, userId } = data;
+  handle("inventory:addMovement", async (ctx, data: any) => {
+    const { productId, type, amount, reason } = data;
+    const userId = ctx.user.id;
 
     await db.transaction(async (tx) => {
       await tx.insert(inventoryMovementsTable).values({
@@ -502,8 +541,9 @@ export function registerIpcHandlers() {
   });
 
   // ============= PRICE CHANGES =============
-  ipcMain.handle("priceChanges:create", async (_e, data: any) => {
-    const { productId, oldPrice, newPrice, reason, userId } = data;
+  handle("priceChanges:create", async (ctx, data: any) => {
+    const { productId, oldPrice, newPrice, reason } = data;
+    const userId = ctx.user.id;
 
     await db.transaction(async (tx) => {
       await tx.insert(priceChangesTable).values({
@@ -523,7 +563,7 @@ export function registerIpcHandlers() {
     return true;
   });
 
-  ipcMain.handle("priceChanges:getAll", async () => {
+  handle("priceChanges:getAll", async () => {
     return await db
       .select({
         id: priceChangesTable.id,
@@ -547,9 +587,9 @@ export function registerIpcHandlers() {
   });
 
   // ============= REPORTS =============
-  ipcMain.handle(
+  handle(
     "reports:getSalesByDateRange",
-    async (_e, startDate: string, endDate: string) => {
+    async (_ctx, startDate: string, endDate: string) => {
       return await db
         .select()
         .from(salesTable)
@@ -563,7 +603,7 @@ export function registerIpcHandlers() {
     }
   );
 
-  ipcMain.handle("reports:getDeletedProducts", async () => {
+  handle("reports:getDeletedProducts", async () => {
     return await db
       .select({
         id: deletedProductsLogTable.id,
@@ -583,7 +623,7 @@ export function registerIpcHandlers() {
   });
 
   // ============= DASHBOARD STATS =============
-  ipcMain.handle("dashboard:getStats", async () => {
+  handle("dashboard:getStats", async () => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
