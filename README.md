@@ -136,4 +136,4 @@ Key source directories:
 
 **Purpose:** Local POS software for beauty supply businesses  
 **Current stage:** Active development  
-**License:** Check the repository's root `LICENSE` file for grant of reuse rights. Package metadata alone does not describe the rights to third-party assets.
+**License:** No root `LICENSE` file is currently present. Confirm rights to the source code and third-party assets before selecting or applying a license.
