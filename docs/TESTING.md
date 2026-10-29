@@ -29,6 +29,7 @@ database is ever written to, overwritten or dropped.
 | `npm run test:hardening` | sanitized errors, user administration, login limiter | yes |
 | `npm run test:pin` | scrypt PINs, legacy upgrade, PIN uniqueness across salts, seed script, users screen | yes |
 | `npm run test:screens` | products, receive (IN/OUT/ADJUST), price change + stale detection, returns (partial/over/pending), reports, vendor isolation, driven through the real UI and verified in PostgreSQL | yes |
+| `npm run test:packaged` | launches the packaged exe (`npm run package:dir` first) against a throwaway DB: window, login, modules, sale/cash/return/report, CSP, shell hardening, no credentials in the asar, config sources, close/reopen | yes |
 | `npm run test:migrations` | migrations from empty and legacy DBs, precheck, drift, startup abort | yes |
 | `npm run test:all` | unit + every Electron suite + migrations | yes |
 | `npm run db:precheck` | read-only pre-flight for the integrity migrations (see below) | DB only |

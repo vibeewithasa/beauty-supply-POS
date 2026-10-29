@@ -60,7 +60,7 @@ export async function run(c) {
 
   await test("CAT-00.admin_visual_login", "e2e", async () => {
     await ui.login(page, admin.pin);
-    await page.waitForURL("**/dashboard", { timeout: 8000 });
+    await page.waitForURL(/#\/dashboard$/, { timeout: 8000 });
   });
 
   // ================================================================== products: create

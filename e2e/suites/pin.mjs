@@ -41,7 +41,7 @@ export async function run(c) {
 
   await test("PIN-00.modern_admin_logs_in_through_the_real_screen", "e2e", async () => {
     await ui.login(page, admin.pin);
-    await page.waitForURL("**/dashboard", { timeout: 8000 });
+    await page.waitForURL(/#\/dashboard$/, { timeout: 8000 });
     expect(isModernHash(await hashOf(admin.id)), "the fixture really is scrypt-hashed");
   });
 
@@ -67,12 +67,12 @@ export async function run(c) {
     usedPins.push(u.pin);
     await resetToLogin();
     await ui.login(page, u.pin);
-    await page.waitForURL("**/sales", { timeout: 8000 });
+    await page.waitForURL(/#\/sales$/, { timeout: 8000 });
     expect(isModernHash(await hashOf(u.id)), "upgraded after the real login");
     await ui.logout(page);
     await page.getByText("Ingresa tu PIN para comenzar").waitFor();
     await ui.login(page, u.pin); // and the upgraded account keeps working
-    await page.waitForURL("**/sales", { timeout: 8000 });
+    await page.waitForURL(/#\/sales$/, { timeout: 8000 });
     await ui.logout(page);
   });
   await test("PIN-03.modern_pins_of_6_7_and_8_digits_log_in_and_wrong_ones_do_not", "security", async () => {
@@ -241,7 +241,7 @@ export async function run(c) {
     await recover();
     await resetToLogin();
     await ui.login(page, admin.pin);
-    await page.waitForURL("**/dashboard", { timeout: 8000 });
+    await page.waitForURL(/#\/dashboard$/, { timeout: 8000 });
     await ui.nav(page, "Usuarios");
     await page.getByRole("heading", { name: "Gestión de Usuarios" }).waitFor();
     const name = "Pantalla " + c.runId, pin = await data.newPin(7), pin2 = await data.newPin(8);

@@ -16,7 +16,7 @@ describes the early MVP and is intentionally not edited here.
 | Dashboard: sales, cash, pending vs paid refunds | implemented; figures shown as-is |
 | Reports (`/reports`, admin): gross sales, by payment method, top products, returns by refund status, local CSV export; dates validated in main (max 366 days). No profit/cost/tax figures (not recorded) | implemented and tested |
 | Receipt/ticket printing, thermal printers, backups, settings | **not implemented** |
-| Packaged installer / auto-update | **not production ready** (see below) |
+| Packaged Windows app (unpacked build, `npm run package:dir`) | works: window, login, every module, sale/cash/return/report, close and reopen, verified by `npm run test:packaged` (see `docs/PACKAGING.md`). **Installer unsigned; auto-update disabled** |
 
 ## Contracts worth knowing
 
@@ -54,21 +54,25 @@ describes the early MVP and is intentionally not edited here.
   PIN login, force a PIN change for legacy accounts, raise the scrypt cost if the user count stays small.
 - **First administrator:** `npm run seed:admin` has no default PIN: type it twice in a terminal (not echoed) or set
   `ADMIN_PIN` for that single command; it is never printed or logged.
-- **Packaged build is broken:** the renderer is built with absolute asset paths and `BrowserRouter`, which fail
-  under `file://`. Needs `base: "./"` and `HashRouter`.
-- **Configuration in the installer:** `DATABASE_URL` is read from a `.env` that is not packaged; the installer
-  needs its own configuration story (and credentials must not ship in the app).
-- **Installer assets:** `build/icon.ico` is missing; the updater feed is a `http://localhost` placeholder; no code signing.
-- **Electron shell hardening not done:** default application menu (DevTools reachable), no `setWindowOpenHandler`,
-  no navigation blocking, no Content-Security-Policy. IPC authorization does not depend on any of these.
-- **Dependencies:** `npm audit` reports vulnerabilities (Electron 39.2.5 among them); they need a controlled upgrade.
+- **Packaged build:** fixed (`base: "./"`, `HashRouter`, CSP in the built `index.html`, shell hardening). The CSP is only
+  exercised by the packaged tests (the dev server has none).
+- **Database configuration in the package:** nothing is packaged. `DATABASE_URL` from the environment or `config.json` in
+  the user data folder (loopback hosts only unless `POS_ALLOW_REMOTE_DB=1`). `config.json` holds the password in plain
+  text: use a dedicated low-privilege PostgreSQL role (details in `docs/PACKAGING.md`).
+- **Installer assets:** no code-signing certificate (SmartScreen warning, updates not trustworthy) and no `build/icon.ico`.
+  Auto-update only runs with an explicit `POS_UPDATE_FEED_URL` (https).
+- **Dependencies (reviewed, NOT upgraded):** `npm audit --omit=dev` reports 18 findings (17 high, 1 moderate) in
+  electron 39.2.5, electron-updater, drizzle-orm, react-router(-dom), postcss, zod and transitive packages
+  (lodash, minimatch, nanoid, picomatch, js-yaml...). Whole-tree audit: 45 (2 critical, mostly build tooling).
+  They need a controlled upgrade with the full suite as the safety net (Electron, drizzle-orm and react-router first);
+  `npm audit fix --force` would jump zod to a new major and was not run.
 - **Backups and restore** are not automated; PostgreSQL must be installed and managed on each machine.
 - Lighter-weight leftovers: a legacy unused `drizzle/migrations/0001_initial.sql`, duplicate `AppRouter.tsx`,
   the renderer lint is still gentle (warnings only for unused names).
 
 ## Requirements before distributing to a real store
 
-1. (done) PIN storage is salted scrypt. 2. Fix the packaged renderer and the configuration/installer path.
+1. (done) PIN storage is salted scrypt. 2. (done) Packaged renderer and configuration path.
 3. (done) Screens for product/inventory/price management, returns and reports.
 4. Decide the pending product questions. 5. Dependency upgrade + audit. 6. Backup/restore procedure.
-7. Electron shell hardening and code signing/updater.
+7. (done) Electron shell hardening. Still open: code signing certificate and a trusted update channel.

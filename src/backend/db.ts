@@ -1,15 +1,25 @@
-import "dotenv/config";
+import { app } from "electron";
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
+import { resolveDatabaseUrl } from "./db-config";
 
-const connectionString = process.env.DATABASE_URL;
-if (!connectionString) {
-  console.warn("DATABASE_URL is not set. Please configure .env");
+// The connection string is resolved here, once, and never baked into the package (see db-config.ts).
+export const dbConfig = resolveDatabaseUrl({
+  env: process.env,
+  packaged: app.isPackaged,
+  userDataDir: app.getPath("userData"),
+  cwd: process.cwd(),
+});
+if (dbConfig.ok) {
+  process.env.DATABASE_URL = dbConfig.url; // so error redaction knows the secret even when it came from config.json
+} else {
+  console.error("DB_CONFIG_ERROR:", dbConfig.reason);
 }
 
-// Configurar PostgreSQL para usar la zona horaria local del sistema
+// Without a valid configuration the pool points at an unusable address: main aborts startup before any query, and
+// pg must never fall back to PG* defaults (an unintended local database).
 export const pool = new Pool({
-  connectionString,
+  connectionString: dbConfig.ok ? dbConfig.url : "postgresql://unconfigured@127.0.0.1:1/unconfigured",
 });
 
 // Configurar la zona horaria de la sesión al conectarse

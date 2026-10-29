@@ -17,7 +17,7 @@ async function openSecondWindow(app) {
     app.evaluate(({ BrowserWindow }, a) => {
       const w = new BrowserWindow({ width: 900, height: 700, webPreferences: { preload: a.preload, contextIsolation: true, nodeIntegration: false } });
       w.loadURL(a.url);
-    }, { preload, url: APP_URL + "/sales" }),
+    }, { preload, url: APP_URL + "/#/sales" }),
   ]);
   await pop.waitForLoadState("domcontentloaded");
   return pop;
@@ -99,7 +99,7 @@ export async function run(c) {
   // ---- B. vendor ---------------------------------------------------------
   await test("B1.vendor_visual_login", "security", async () => {
     await ui.login(page, vendor.pin);
-    await page.waitForURL("**/sales", { timeout: 8000 });
+    await page.waitForURL(/#\/sales$/, { timeout: 8000 });
     const m = await me();
     expect(m && m.id === vendor.id && m.role === "vendor", "main reports vendor session: " + JSON.stringify(m));
   });
@@ -115,7 +115,7 @@ export async function run(c) {
     for (const ch of ADMIN_ONLY) { const r = await ipc(page, CALLS[ch]); if (!forbidden(r)) leaks.push(`${ch}:${r.ok ? "ALLOWED" : r.err}`); }
     expect(leaks.length === 0, "vendor reached admin channels (or got a session error instead of 'No autorizado'): " + leaks.join(" | "));
     expect((await userCount()) === before, "user table unchanged");
-    expect(new URL(page.url()).pathname === "/sales", "a role denial must NOT send the user to the login: " + page.url());
+    expect(new URL(page.url()).hash === "#/sales", "a role denial must NOT send the user to the login: " + page.url());
     expect((await me()) !== null, "session still alive after role denials");
   });
   await test("B4.vendor_cannot_create_admin_or_change_roles_or_delete_users", "security", async () => {
@@ -143,14 +143,14 @@ export async function run(c) {
   });
   await test("B6.reload_keeps_vendor_privileges_unchanged", "security", async () => {
     await page.reload();
-    await page.waitForURL("**/sales", { timeout: 8000 });
+    await page.waitForURL(/#\/sales$/, { timeout: 8000 });
     const m = await me();
     expect(m && m.role === "vendor", "still vendor after reload");
     expect(forbidden(await ipc(page, CALLS["users:getAll"])), "users:getAll still denied");
   });
   await test("B7.url_navigation_to_admin_route_redirects_vendor", "security", async () => {
-    await page.goto(APP_URL + "/users");
-    await page.waitForURL("**/sales", { timeout: 8000 });
+    await page.goto(APP_URL + "/#/users");
+    await page.waitForURL(/#\/sales$/, { timeout: 8000 });
     expect((await me()).role === "vendor", "no escalation");
   });
   await test("B8.logout_invalidates_session_in_main", "security", async () => {
@@ -163,7 +163,7 @@ export async function run(c) {
   // ---- C. administrator --------------------------------------------------
   await test("C1.admin_visual_login", "security", async () => {
     await ui.login(page, admin.pin);
-    await page.waitForURL("**/dashboard", { timeout: 8000 });
+    await page.waitForURL(/#\/dashboard$/, { timeout: 8000 });
     expect((await me()).role === "admin", "admin session");
   });
   await test("C2.admin_operations_authorized", "security", async () => {
@@ -190,7 +190,7 @@ export async function run(c) {
   await test("C5.non_auth_errors_do_not_log_the_user_out", "security", async () => {
     const r = await ipc(page, "api.products.softDelete(987654321,'c5')"); // business error: product does not exist
     expect(r.ok === false && !denied(r), "expected a non-auth failure: " + JSON.stringify(r));
-    expect(new URL(page.url()).pathname === "/dashboard", "stays on the dashboard: " + page.url());
+    expect(new URL(page.url()).hash === "#/dashboard", "stays on the dashboard: " + page.url());
     expect((await me()) !== null, "session intact");
   });
   await ui.logout(page);
@@ -209,7 +209,7 @@ export async function run(c) {
     const u = await data.user("REVOKE", "admin");
     await resetToLogin();
     await ui.login(page, u.pin);
-    await page.waitForURL("**/dashboard", { timeout: 8000 });
+    await page.waitForURL(/#\/dashboard$/, { timeout: 8000 });
     await ui.nav(page, "Caja");
     await page.getByText("No hay sesión de caja abierta").waitFor();
     expect(!denied(await ipc(page, CALLS["products:getAll"])), "works before revocation");
@@ -234,20 +234,20 @@ export async function run(c) {
     const u = await data.user("DOWNGRADE", "admin");
     await resetToLogin();
     await ui.login(page, u.pin);
-    await page.waitForURL("**/dashboard", { timeout: 8000 });
+    await page.waitForURL(/#\/dashboard$/, { timeout: 8000 });
     expect(!denied(await ipc(page, CALLS["users:getAll"])), "admin before");
     await db.query("update users set role='vendor' where id=$1", [u.id]);
     expect(forbidden(await ipc(page, CALLS["users:getAll"])), "users:getAll 'No autorizado' after downgrade");
     expect(!denied(await ipc(page, CALLS["products:getAll"])), "vendor-level access remains");
     await page.getByRole("link", { name: "Usuarios", exact: true }).click({ noWaitAfter: true, timeout: 8000 }); // stale admin link; the route guard asks the main process
-    await page.waitForURL("**/sales", { timeout: 8000 });
+    await page.waitForURL(/#\/sales$/, { timeout: 8000 });
     expect((await me()).role === "vendor", "downgraded user keeps a (vendor) session: a role change is not a login loss");
   });
   await test("D4.deleted_user_loses_session", "security", async () => {
     const u = await data.user("DELETED", "admin");
     await resetToLogin();
     await ui.login(page, u.pin);
-    await page.waitForURL("**/dashboard", { timeout: 8000 });
+    await page.waitForURL(/#\/dashboard$/, { timeout: 8000 });
     await db.query("delete from users where id=$1", [u.id]);
     expect(unauthenticated(await ipc(page, CALLS["products:getAll"])), "rejected after row deleted");
   });
@@ -257,19 +257,19 @@ export async function run(c) {
     const v = await data.user("WIN1", "vendor");
     await resetToLogin();
     await ui.login(page, v.pin);
-    await page.waitForURL("**/sales", { timeout: 8000 });
+    await page.waitForURL(/#\/sales$/, { timeout: 8000 });
     const pop = await openSecondWindow(app);
     c.watch(pop);
     const hasApi = await waitFor(async () => pop.evaluate(() => !!window.api), 8000);
     expect(hasApi, "popup has the preload API (same hardened webPreferences)");
     expect((await me(pop)) === null, "popup me() must be null (the main-process session belongs to the first window only)");
     expect(unauthenticated(await ipc(pop, CALLS["products:getAll"])), "popup IPC rejected");
-    const left = await waitFor(async () => !new URL(pop.url()).pathname.startsWith("/sales"), 8000);
+    const left = await waitFor(async () => !new URL(pop.url()).hash.startsWith("#/sales"), 8000);
     expect(left, "popup UI is sent to login: " + pop.url());
     // second window logs in as another user; the first window must be unaffected
     const a = await data.user("WIN2ADMIN", "admin");
     await ui.login(pop, a.pin);
-    await pop.waitForURL("**/dashboard", { timeout: 8000 });
+    await pop.waitForURL(/#\/dashboard$/, { timeout: 8000 });
     expect((await me(pop)).role === "admin", "popup is admin");
     expect((await me()).id === v.id, "first window is still the vendor");
     expect(forbidden(await ipc(page, CALLS["users:getAll"])), "first window still denied");
@@ -296,7 +296,7 @@ export async function run(c) {
   await test("F2.iframe_gets_no_api", "security", async () => {
     const v = await data.user("IFRAME", "vendor");
     await ui.login(page, v.pin);
-    await page.waitForURL("**/sales", { timeout: 8000 });
+    await page.waitForURL(/#\/sales$/, { timeout: 8000 });
     const t = await page.evaluate(() => new Promise((resolve) => {
       const f = document.createElement("iframe");
       f.src = "http://localhost:5173/";
@@ -316,7 +316,7 @@ export async function run(c) {
       await resetToLogin();
       const v = await data.user("ORIGIN_" + label.slice(0, 5), "admin");
       await ui.login(page, v.pin);
-      await page.waitForURL("**/dashboard", { timeout: 8000 });
+      await page.waitForURL(/#\/dashboard$/, { timeout: 8000 });
       expect(!denied(await ipc(page, CALLS["users:getAll"])), "admin session works on the app origin");
       await page.goto(url); // same window, same main-process session, foreign document (the preload still runs there)
       expect((await pageApi(page)) === "object", "precondition: the preload runs on the foreign page");
@@ -333,13 +333,16 @@ export async function run(c) {
     await resetToLogin();
     const v = await data.user("FORGE", "vendor");
     await ui.login(page, v.pin);
-    await page.waitForURL("**/sales", { timeout: 8000 });
+    await page.waitForURL(/#\/sales$/, { timeout: 8000 });
     // tampering attempt (not a login): pretend to be an admin in the client-side cache
     await page.evaluate(() => sessionStorage.setItem("user", JSON.stringify({ id: 1, name: "forged", role: "admin" })));
     expect(forbidden(await ipc(page, CALLS["users:getAll"])), "main ignores the forged cache");
-    await page.goto(APP_URL + "/users");
-    await page.waitForURL("**/sales", { timeout: 8000 });
-    const cached = await page.evaluate(() => JSON.parse(sessionStorage.getItem("user") || "{}"));
+    await page.goto(APP_URL + "/#/users");
+    await page.waitForURL(/#\/sales$/, { timeout: 8000 });
+    // hash navigation does not reload the page: the guard redirects first and refreshes the cache from main right after
+    const read = () => page.evaluate(() => JSON.parse(sessionStorage.getItem("user") || "{}"));
+    await waitFor(async () => (await read()).role === "vendor", 5000);
+    const cached = await read();
     expect(cached.role === "vendor" && cached.name === v.name, "route guard overwrote the forged cache with the main-process identity: " + JSON.stringify(cached));
   });
   await resetToLogin().catch(() => {});

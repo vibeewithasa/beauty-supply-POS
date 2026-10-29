@@ -17,7 +17,7 @@ async function openSecondWindow(app) {
     app.evaluate(({ BrowserWindow }, a) => {
       const w = new BrowserWindow({ width: 900, height: 700, webPreferences: { preload: a.preload, contextIsolation: true, nodeIntegration: false } });
       w.loadURL(a.url);
-    }, { preload, url: APP_URL + "/sales" }),
+    }, { preload, url: APP_URL + "/#/sales" }),
   ]);
   await pop.waitForLoadState("domcontentloaded");
   await waitFor(async () => pop.evaluate(() => !!window.api), 8000);
@@ -64,7 +64,7 @@ export async function run(c) {
 
   await test("HARD-00.admin_visual_login", "e2e", async () => {
     await ui.login(page, admin.pin);
-    await page.waitForURL("**/dashboard", { timeout: 8000 });
+    await page.waitForURL(/#\/dashboard$/, { timeout: 8000 });
   });
 
   // ================================================================== IPC error boundary

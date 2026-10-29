@@ -28,7 +28,7 @@ export async function run(c) {
     await page.goto(APP_URL);
     await page.getByText("Ingresa tu PIN para comenzar").waitFor();
     await ui.login(page, admin.pin);
-    await page.waitForURL("**/dashboard", { timeout: 8000 });
+    await page.waitForURL(/#\/dashboard$/, { timeout: 8000 });
     for (const l of ["Productos", "Recepción", "Devoluciones", "Reportes", "Caja", "Vender"]) {
       const link = page.locator("nav").getByRole("link", { name: l, exact: true });
       await link.waitFor({ timeout: 5000 }).catch(() => {});
@@ -293,14 +293,14 @@ export async function run(c) {
     await ui.logout(page);
     await page.getByText("Ingresa tu PIN para comenzar").waitFor();
     await ui.login(page, vendor.pin);
-    await page.waitForURL("**/sales", { timeout: 8000 });
+    await page.waitForURL(/#\/sales$/, { timeout: 8000 });
     for (const l of ["Productos", "Recepción", "Reportes", "Usuarios", "Dashboard"]) {
       expect(await page.getByRole("link", { name: l, exact: true }).count() === 0, "vendor has no link " + l);
     }
     for (const route of ["/inventory", "/receive", "/reports"]) {
-      await page.goto(APP_URL + route);
+      await page.goto(APP_URL + "/#" + route);
       await page.waitForTimeout(600);
-      expect(!new URL(page.url()).pathname.startsWith(route), `vendor redirected away from ${route}: ${page.url()}`);
+      expect(!new URL(page.url()).hash.startsWith("#" + route), `vendor redirected away from ${route}: ${page.url()}`);
     }
     for (const expr of ["api.products.listAdmin()", `api.reports.getSummary({from:'2026-01-01',to:'2026-01-02'})`, "api.inventory.getMovements(1)", "api.priceChanges.getAll(1)"]) {
       const r = await ipc(page, expr);
@@ -317,7 +317,7 @@ export async function run(c) {
     await ui.logout(page);
     await page.getByText("Ingresa tu PIN para comenzar").waitFor();
     await ui.login(page, admin.pin);
-    await page.waitForURL("**/dashboard", { timeout: 8000 });
+    await page.waitForURL(/#\/dashboard$/, { timeout: 8000 });
     await ui.nav(page, "Caja");
     const expected = await ui.closeCash(page);
     const s = await one("select status, final_amount from cash_sessions order by id desc limit 1");

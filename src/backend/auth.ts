@@ -34,7 +34,7 @@ const guardOptions = (): GuardOptions => ({
   devOrigin: "http://localhost:5173",
   appIndexPath: path.join(app.getAppPath(), "dist", "renderer", "index.html"),
 });
-const trustedUrl = (url: string) => isTrustedUrl(url, guardOptions());
+export const trustedUrl = (url: string) => isTrustedUrl(url, guardOptions());
 
 function assertTrustedSender(event: IpcMainInvokeEvent) {
   if (!isTrustedFrame(event.senderFrame, event.sender.mainFrame, guardOptions())) {

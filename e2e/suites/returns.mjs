@@ -62,7 +62,7 @@ export async function run(c) {
 
   await test("RET-00.admin_visual_login", "e2e", async () => {
     await ui.login(page, admin.pin);
-    await page.waitForURL("**/dashboard", { timeout: 8000 });
+    await page.waitForURL(/#\/dashboard$/, { timeout: 8000 });
     for (const r of await rows("select id from cash_sessions where closed_at is null")) await call(`api.cash.closeSession(${r.id},0)`);
     const s = await call("api.cash.openSession(500)");
     expect(s.ok, s.err);

@@ -15,7 +15,7 @@
     "build": "tsup src/main/main.ts --format cjs --out-dir dist/main --target node18 --external electron,electron-updater && tsup src/preload/preload.ts --format cjs --out-dir dist/preload --target node18 --external electron && vite build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint .",
-    "package": "electron-builder -w",
+    "package": "npm run build && electron-builder --win",
     "db:generate": "drizzle-kit generate",
     "db:check": "drizzle-kit check",
     "db:migrate": "node ./scripts/migrate.mjs",
@@ -31,18 +31,22 @@
     "test:pin": "node e2e/run.mjs pin",
     "test:screens": "node e2e/run.mjs screens",
     "test:migrations": "node e2e/migrations.mjs",
-    "test:all": "npm run test:unit && node e2e/run.mjs all && node e2e/migrations.mjs"
+    "test:all": "npm run test:unit && node e2e/run.mjs all && node e2e/migrations.mjs",
+    "package:dir": "npm run build && electron-builder --win dir",
+    "test:packaged": "node e2e/packaged.mjs"
   },
   "build": {
     "appId": "com.beauty.pos",
     "productName": "Beauty POS",
     "directories": {
-      "buildResources": "build"
+      "buildResources": "build",
+      "output": "release"
     },
     "files": [
       "dist/**",
       "drizzle/**",
-      "package.json"
+      "package.json",
+      "!**/*.map"
     ],
     "asar": true,
     "win": {
@@ -54,14 +58,8 @@
           ]
         }
       ],
-      "icon": "build/icon.ico"
-    },
-    "publish": [
-      {
-        "provider": "generic",
-        "url": "http://localhost/updates/"
-      }
-    ]
+      "signAndEditExecutable": false
+    }
   },
   "dependencies": {
     "@electron/remote": "^2.1.2",

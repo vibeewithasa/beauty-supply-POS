@@ -147,3 +147,6 @@ vite.config.ts.timestamp-*
 
 # E2E run artifacts (logs, screenshots, results)
 e2e-artifacts/
+
+# electron-builder output (installers, unpacked app)
+release/

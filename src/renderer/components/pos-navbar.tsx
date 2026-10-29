@@ -72,13 +72,13 @@ export function POSNavbar() {
 
   return (
     <nav className="bg-primary text-primary-foreground border-b border-primary/20 sticky top-0 z-40">
-      <div className="flex items-center justify-between px-6 py-3 overflow-x-auto">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2">
         <div className="flex items-center gap-2 flex-shrink-0">
           <h1 className="text-xl font-bold">POS Estética</h1>
           <span className="text-sm opacity-80">• {user.name}</span>
         </div>
 
-        <div className="flex gap-1 overflow-x-auto">
+        <div className="flex flex-wrap items-center gap-1">
           {links.map((link) => {
             const IconComponent = link.icon;
             return (
@@ -86,7 +86,7 @@ export function POSNavbar() {
                 <Button
                   variant={isActive(link.href) ? "secondary" : "ghost"}
                   size="sm"
-                  className="gap-2 whitespace-nowrap"
+                  className="gap-1.5 px-2 whitespace-nowrap"
                 >
                   <IconComponent size={18} />
                   {link.label}

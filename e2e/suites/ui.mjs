@@ -19,7 +19,7 @@ export async function run(c) {
 
   await test("A0.login_screen_renders", "e2e", async () => { await page.getByText("POS Estética").first().waitFor(); await shot("login"); });
   await test("A1.login_wrong_pin", "e2e", async () => { await ui.login(page, wrongPin); await page.getByText("PIN incorrecto").waitFor({ timeout: 5000 }); });
-  await test("A2.login_admin_goes_to_dashboard", "e2e", async () => { await ui.login(page, admin.pin); await page.waitForURL("**/dashboard", { timeout: 8000 }); });
+  await test("A2.login_admin_goes_to_dashboard", "e2e", async () => { await ui.login(page, admin.pin); await page.waitForURL(/#\/dashboard$/, { timeout: 8000 }); });
   await test("B1.dashboard_loads_without_error", "e2e", async () => {
     await page.waitForTimeout(1200);
     const t = await page.evaluate(() => document.body.innerText);
@@ -116,11 +116,11 @@ export async function run(c) {
   await test("A3.logout_returns_to_login", "e2e", async () => { await ui.logout(page); await page.getByText("Ingresa tu PIN para comenzar").waitFor(); });
   await test("A4.vendor_login_sees_only_vendor_navigation", "e2e", async () => {
     await ui.login(page, vendor.pin);
-    await page.waitForURL("**/sales", { timeout: 8000 });
+    await page.waitForURL(/#\/sales$/, { timeout: 8000 });
     const links = await page.getByRole("link").allInnerTexts();
     expect(!links.some((l) => /Usuarios|Dashboard|Inventario/.test(l)), "links: " + links.join(","));
-    await page.goto(APP_URL + "/users");
-    await page.waitForURL("**/sales", { timeout: 6000 });
+    await page.goto(APP_URL + "/#/users");
+    await page.waitForURL(/#\/sales$/, { timeout: 6000 });
     await shot("vendor");
   });
   await test("A5.vendor_can_open_cash_and_sell", "e2e", async () => {
