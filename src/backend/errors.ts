@@ -17,3 +17,9 @@ export function pgErrorCode(e: unknown): string | undefined {
   const code = err?.code ?? err?.cause?.code;
   return typeof code === "string" ? code : undefined;
 }
+
+/**
+ * Authentication/authorization rejections. Their messages are fixed and safe to show:
+ *  "Sesión no válida" (no or revoked session) / "No autorizado" (role, untrusted sender).
+ */
+export class AuthError extends Error {}

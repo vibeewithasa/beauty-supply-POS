@@ -1,7 +1,7 @@
 // Catalog suite: administrative operations on products, inventory movements and prices, exercised through
 // the real IPC (real visual admin login) with every outcome verified in PostgreSQL: validation, audit
 // trail, concurrency (real parallel IPC calls) and mid-transaction rollback (test-only DB triggers).
-import { ui, ipc, expect, money, connectRunDb, waitFor } from "../lib/harness.mjs";
+import { ui, ipc, expect, money, connectRunDb, waitFor, sleep } from "../lib/harness.mjs";
 
 const LEAKS_SQL = /Failed query|params:|(select|insert into|update|delete from) .*(from|set|values) /i;
 
@@ -11,6 +11,7 @@ export async function run(c) {
   const one = async (sql, p) => (await db.query(sql, p)).rows[0];
   const rows = async (sql, p) => (await db.query(sql, p)).rows;
   const J = JSON.stringify;
+  const failedAt = async (mark, channel, sqlObj) => { await sleep(400); return new RegExp(`unexpected error in ${channel}[\\s\\S]*${sqlObj}`).test(c.mainLog.slice(mark).join("\n")); };
   // a business rejection carries a stable code AND never leaks SQL text or query parameters
   const biz = (r, code) => r.ok === false && String(r.err).includes(`[${code}]`) && !LEAKS_SQL.test(String(r.err));
   const call = (expr) => ipc(page, expr);
@@ -297,8 +298,9 @@ export async function run(c) {
     const p = await data.product("I11", "5.00", 5);
     await withTrigger("inventory_movements", "before insert", "e2e_fail_inv2", `if new.product_id = ${p.id} then raise exception 'e2e injected failure'; end if; return new;`, async () => {
       const before = await snap();
+      const mark = c.mainLog.length;
       const r = await move(p.id, "IN", 10);
-      expect(r.ok === false && /Failed query: insert into "inventory_movements"/.test(r.err), "failure at the history insert, after the stock update: " + J(r).slice(0, 200));
+      expect(biz(r, "ERROR_INTERNO") && (await failedAt(mark, "inventory:addMovement", "insert into \"inventory_movements\"")), "an unexpected failure: generic public error + redacted diagnostic in the main log at the injected failure point: " + JSON.stringify(r).slice(0, 200));
       expect((await snap()) === before && (await stockOf(p)) === 5, "stock restored, no orphan movement");
     });
   });
@@ -381,14 +383,16 @@ export async function run(c) {
     const p = await data.product("PR6", "10.00", 1);
     await withTrigger("price_changes", "before insert", "e2e_fail_hist", `if new.product_id = ${p.id} then raise exception 'e2e injected failure'; end if; return new;`, async () => {
       const before = await snap();
+      const mark = c.mainLog.length;
       const r = await reprice({ productId: p.id, newPrice: 15 });
-      expect(r.ok === false && /Failed query: insert into "price_changes"/.test(r.err), J(r).slice(0, 200));
+      expect(biz(r, "ERROR_INTERNO") && (await failedAt(mark, "priceChanges:create", "insert into \"price_changes\"")), "an unexpected failure: generic public error + redacted diagnostic in the main log at the injected failure point: " + JSON.stringify(r).slice(0, 200));
       expect((await snap()) === before && (await priceOf(p)) === 10, "history failure: price unchanged");
     });
     await withTrigger("products", "before update", "e2e_fail_upd", `if new.id = ${p.id} and new.price <> old.price then raise exception 'e2e injected failure'; end if; return new;`, async () => {
       const before = await snap();
+      const mark = c.mainLog.length;
       const r = await reprice({ productId: p.id, newPrice: 15 });
-      expect(r.ok === false && /Failed query: update "products"/.test(r.err), J(r).slice(0, 200));
+      expect(biz(r, "ERROR_INTERNO") && (await failedAt(mark, "priceChanges:create", "update \"products\"")), "an unexpected failure: generic public error + redacted diagnostic in the main log at the injected failure point: " + JSON.stringify(r).slice(0, 200));
       expect((await snap()) === before && (await history(p)).length === 0 && (await priceOf(p)) === 10, "update failure: the history row written before it is rolled back too");
     });
   });

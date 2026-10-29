@@ -42,6 +42,12 @@ export function scrub(text) {
   for (const secret of [baseConn, decodeURIComponent(base.password || ""), base.password || ""]) if (secret && secret.length > 2) t = t.split(secret).join("***");
   return t.replace(/postgres(ql)?:\/\/\S+/g, "postgres://***");
 }
+/** True when the text contains the connection string or the database password (never print the secret). */
+export function containsSecret(text) {
+  const t = String(text);
+  const pw = decodeURIComponent(base.password || "");
+  return t.includes(baseConn) || (pw.length > 2 && t.includes(pw)) || /postgres(?:ql)?:\/\/[^\s"'`:@/]+:[^\s"'`@]+@/.test(t);
+}
 export const money = (v) => Number(Number(v).toFixed(2));
 export function urlFor(db, appName) {
   const x = new URL(base);
@@ -152,8 +158,11 @@ export function buildMain() {
 }
 
 // ---------------------------------------------------------------- Electron
-export async function launchApp(runDb, db, artifacts) {
-  const env = { ...process.env, DATABASE_URL: urlFor(runDb, "e2e_app") };
+// Suites may export `env` to override these. The default raises the login attempt limit so unrelated
+// tests cannot lock the login by accident; the hardening suite runs with real, small limits.
+const DEFAULT_APP_ENV = { POS_LOGIN_MAX_ATTEMPTS: "1000" };
+export async function launchApp(runDb, db, artifacts, extraEnv = {}) {
+  const env = { ...process.env, ...DEFAULT_APP_ENV, ...extraEnv, DATABASE_URL: urlFor(runDb, "e2e_app") };
   delete env.ELECTRON_RUN_AS_NODE;
   let app = await _electron.launch({
     executablePath: path.join(ROOT, "node_modules/electron/dist/electron.exe"),

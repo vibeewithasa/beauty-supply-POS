@@ -14,7 +14,7 @@ const policy = (() => {
   return Object.fromEntries([...block.matchAll(/"([\w:]+)":\s*"(admin|authenticated)"/g)].map((m) => [m[1], m[2]]));
 })();
 const handled = [...ipc.matchAll(/\bhandle\(\s*"([\w:]+)"/g)].map((m) => m[1]);
-const publicCh = [...auth.matchAll(/ipcMain\.handle\("([\w:]+)"/g)].map((m) => m[1]);
+const publicCh = [...auth.matchAll(/publicHandle\("([\w:]+)"/g)].map((m) => m[1]);
 const used = [...preload.matchAll(/invoke\("([\w:]+)"/g)].map((m) => m[1]);
 
 test("every handler registered in ipc.ts has a policy and vice versa", () => {
@@ -26,9 +26,11 @@ test("admin-only channels are exactly the expected 14", () => {
   assert.equal(admin.length, 14);
   for (const ch of admin) assert.match(ch, /^(products:(create|update|softDelete)|users:|inventory:|priceChanges:|reports:|dashboard:)/);
 });
-test("ipcMain.handle is only used for the three public auth channels", () => {
+test("the only public channels are auth:login/me/logout and every registration goes through an error-guarded wrapper", () => {
   assert.deepEqual([...publicCh].sort(), ["auth:login", "auth:logout", "auth:me"]);
   assert.equal(/ipcMain\.handle/.test(ipc), false, "ipc.ts must register only through the secure wrapper");
+  assert.equal([...auth.matchAll(/ipcMain\.handle\(/g)].length, 2, "auth.ts: exactly two raw registrations (secureHandle and publicHandle)");
+  assert.ok([...auth.matchAll(/guarded\(/g)].length >= 2, "both wrappers run their handler inside guarded()");
 });
 test("the preload exposes no channel without a handler, and every handler is reachable", () => {
   const known = new Set([...Object.keys(policy), ...publicCh]);

@@ -14,7 +14,7 @@ export async function run(c) {
   const call = (expr) => ipc(page, expr);
   const biz = (r, code) => r.ok === false && String(r.err).includes(`[${code}]`) && !LEAKS_SQL.test(String(r.err));
   // an unexpected (non-business) failure; message shape differs once errors are sanitized, both are accepted here
-  const internal = (r) => r.ok === false && (/Failed query/.test(r.err) || String(r.err).includes("[ERROR_INTERNO]")) && !/\[(?!ERROR_INTERNO)[A-Z_]+\]/.test(r.err);
+  const internal = (r) => r.ok === false && String(r.err).includes("[ERROR_INTERNO]") && !LEAKS_SQL.test(String(r.err));
   const settled = (calls) => call(`Promise.allSettled([${calls.join(",")}]).then(rs => rs.map(x => ({ ok: x.status === 'fulfilled', err: x.reason && x.reason.message })))`);
   const doReturn = (saleId, items, reason = "devolución e2e") => call(`api.returns.create(${J({ saleId, items, reason })})`);
   const stockOf = async (p) => Number((await one("select stock from products where id=$1", [p.id])).stock);

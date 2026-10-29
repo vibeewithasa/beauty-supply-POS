@@ -37,7 +37,9 @@ export const cashSessionStatusEnum = pgEnum("cash_session_status", [
   "closed",
 ]);
 
-export const users = pgTable("users", {
+export const users = pgTable(
+  "users",
+  {
   id: serial("id").primaryKey(),
   name: varchar("name", { length: 120 }).notNull(),
   pinHash: text("pin_hash").notNull(),
@@ -46,7 +48,10 @@ export const users = pgTable("users", {
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
     .defaultNow()
     .notNull(),
-});
+  },
+  // two users can never share a PIN (login identifies the user by PIN alone)
+  (t) => [uniqueIndex("users_pin_hash_unique").on(t.pinHash)]
+);
 
 export const products = pgTable(
   "products",

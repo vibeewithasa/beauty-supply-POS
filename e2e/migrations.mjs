@@ -85,10 +85,12 @@ try {
     expect((await one(edb, "select string_agg(e.enumlabel, ',' order by e.enumsortorder) v from pg_enum e join pg_type t on t.oid=e.enumtypid where t.typname='refund_status'")).v === "pending,paid,legacy_unspecified", "refund_status enum");
     expect((await one(edb, "select column_default d from information_schema.columns where table_name='returns' and column_name='refund_status'")).d.startsWith("'pending'"), "new returns default to pending");
     expect((await one(edb, "select count(*)::int n from pg_indexes where schemaname='public' and indexdef like 'CREATE UNIQUE INDEX%' and indexdef like '%WHERE%'")).n === 1, "exactly one partial unique index");
+    expect((await one(edb, "select count(*)::int n from pg_indexes where indexname in ('users_pin_hash_unique','return_items_return_sale_item_unique')")).n === 2, "unique PIN index and unique return line index");
     return "10 foreign keys, 14 CHECK, 1 partial unique index, enum values 'deleted' and refund_status";
   });
   await test("MIG-02.constraints_reject_bad_data_at_the_database_level", "migration", async () => {
     await edb.query("insert into users(name,pin_hash,role) values('m','x','admin')");
+    await expectSqlError(edb, "insert into users(name,pin_hash,role) values('m2','x','vendor')", "23505", "two users with the same PIN hash");
     await edb.query("insert into products(sku,name,price,stock) values('MIG-1','m','1.00',1)");
     await expectSqlError(edb, "update products set stock = -1 where sku='MIG-1'", "23514", "negative stock");
     await expectSqlError(edb, "insert into products(sku,name,price,stock) values('MIG-2','m','-1.00',1)", "23514", "negative price");
@@ -305,6 +307,32 @@ try {
     });
   }
   fs.rmSync(pre5, { recursive: true, force: true });
+
+  // ------------------------------------------------------------ 3d. unique PIN migration (0006)
+  const pre6 = makeFolder(6);
+  await test("MIG-09.duplicate_pins_block_0006_and_roll_it_back", "migration", async () => {
+    const name = await newDb();
+    await applyMigrations(name, pre6);
+    const db = await connectRunDb(name);
+    try {
+      await db.query("insert into users(name,pin_hash,role) values('a','same','admin'),('b','same','vendor'),('c','other','vendor')");
+      const before = await fingerprint(db);
+      const pre = precheck(name);
+      expect(pre.code === 1 && /BLOCKER\s+\d+\s+users sharing the same PIN/.test(pre.out), "precheck must flag the duplicate:\n" + pre.out);
+      expect((await fingerprint(db)) === before, "precheck wrote something");
+      let failed = false;
+      try { await applyMigrations(name); } catch { failed = true; }
+      expect(failed, "0006 must fail while two users share a PIN");
+      expect((await one(db, "select count(*)::int n from drizzle.__drizzle_migrations")).n === 6, "nothing recorded");
+      expect((await one(db, "select count(*)::int n from pg_indexes where indexname='users_pin_hash_unique'")).n === 0, "no index created");
+      expect((await fingerprint(db)) === before, "data untouched: nothing is merged or deleted automatically");
+      await db.query("update users set pin_hash='fixed' where name='b'");
+      expect(precheck(name).code === 0, "after the operator fixes the data the precheck is clean");
+      await applyMigrations(name);
+      expect((await one(db, "select count(*)::int n from pg_indexes where indexname='users_pin_hash_unique'")).n === 1, "and the migration applies");
+    } finally { await db.end(); }
+  });
+  fs.rmSync(pre6, { recursive: true, force: true });
 
   // ------------------------------------------------------------ 4. startup must abort when migrations fail
   await test("MIG-05.app_refuses_to_run_when_migrations_fail", "migration", async () => {

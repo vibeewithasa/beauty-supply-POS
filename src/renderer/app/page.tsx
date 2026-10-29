@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
+import { describeIpcError } from "@/lib/ipc-error";
 
 export default function LoginPage() {
   const [pin, setPin] = useState("");
@@ -43,8 +44,12 @@ export default function LoginPage() {
       }
     } catch (err) {
       console.error("Login error:", err);
-      setError("Error al iniciar sesión");
-      toast.error("Error al iniciar sesión");
+      // the only specific message is the lock after too many failed attempts (generic about users)
+      const { code, message } = describeIpcError(err, "Error al iniciar sesión");
+      const text = code === "LOGIN_BLOQUEADO" ? message : "Error al iniciar sesión";
+      setError(text);
+      setPin("");
+      toast.error(text);
     } finally {
       setLoading(false);
     }
@@ -123,13 +128,6 @@ export default function LoginPage() {
           >
             {loading ? "Ingresando..." : "Iniciar Sesión"}
           </Button>
-
-          <div className="mt-6 p-3 bg-secondary/20 rounded-lg text-xs text-muted-foreground text-center space-y-1">
-            <p className="font-medium">PIN Administrador: 0000</p>
-            <p className="text-xs opacity-70">
-              (Usa script seed:admin para crear más usuarios)
-            </p>
-          </div>
         </div>
       </Card>
     </div>

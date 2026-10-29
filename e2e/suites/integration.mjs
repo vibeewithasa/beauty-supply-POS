@@ -2,7 +2,7 @@
 // (after a real visual login as an administrator) with every outcome verified in PostgreSQL.
 // The six bugs confirmed in Phase 0.5 are fixed; their former KNOWN_FAIL probes now assert the
 // corrected behaviour as normal tests (ids "BUG-n.fixed.*").
-import { ui, ipc, expect, money } from "../lib/harness.mjs";
+import { ui, ipc, expect, money, sleep } from "../lib/harness.mjs";
 
 const LEAKS_SQL = /Failed query|params:|(select|insert into|update|delete from) .*(from|set|values) /i;
 
@@ -12,6 +12,7 @@ export async function run(c) {
   const one = async (sql, p) => (await db.query(sql, p)).rows[0];
   // a business rejection carries a stable code AND never leaks SQL text or query parameters
   const biz = (r, code) => r.ok === false && String(r.err).includes(`[${code}]`) && !LEAKS_SQL.test(String(r.err));
+  const failedAt = async (mark, channel, sqlObj) => { await sleep(400); return new RegExp(`unexpected error in ${channel}[\\s\\S]*${sqlObj}`).test(c.mainLog.slice(mark).join("\n")); };
   const round2 = (n) => Math.round(n * 100) / 100;
   const payload = (sessionId, lines, method = "cash", over = {}) => {
     const items = lines.map(({ p, q }) => ({ productId: p.id, quantity: q, unitPrice: p.price, subtotal: round2(p.price * q) }));
@@ -307,8 +308,9 @@ export async function run(c) {
     await db.query("create trigger e2e_fail_inv_t before insert on inventory_movements for each row execute function e2e_fail_inv()");
     try {
       const before = await snap();
+      const mark = c.mainLog.length;
       const r = await sell(payload(sid, [{ p: a, q: 2 }, { p: b, q: 1 }], "cash"));
-      expect(r.ok === false && /Failed query: insert into "inventory_movements"/.test(r.err), "the failure must happen at the second item's inventory insert (after earlier writes): " + JSON.stringify(r).slice(0, 300));
+      expect(biz(r, "ERROR_INTERNO") && (await failedAt(mark, "sales:create", "insert into \"inventory_movements\"")), "an unexpected failure: generic public error + redacted diagnostic in the main log at the injected failure point: " + JSON.stringify(r).slice(0, 200));
       expect((await snap()) === before, "sale, items, stock, inventory and cash all rolled back");
       expect((await stockOf(a)) === 5 && (await stockOf(b)) === 5, "both stocks restored");
       expect((await cashOf(sid)) === 10, "cash restored");
@@ -324,8 +326,9 @@ export async function run(c) {
     await db.query("create trigger e2e_fail_cash_t before insert on cash_movements for each row execute function e2e_fail_cash()");
     try {
       const before = await snap();
+      const mark = c.mainLog.length;
       const r = await ipc(page, `api.cash.addMovement({sessionId:${sid},type:'OUT',amount:30,reason:'e2e-rollback'})`);
-      expect(r.ok === false && /Failed query: insert into "cash_movements"/.test(r.err), JSON.stringify(r).slice(0, 300));
+      expect(biz(r, "ERROR_INTERNO") && (await failedAt(mark, "cash:addMovement", "insert into \"cash_movements\"")), "an unexpected failure: generic public error + redacted diagnostic in the main log at the injected failure point: " + JSON.stringify(r).slice(0, 200));
       expect((await snap()) === before && (await cashOf(sid)) === 100, "balance update rolled back, no orphan movement");
     } finally {
       await db.query("drop trigger if exists e2e_fail_cash_t on cash_movements");
@@ -337,8 +340,9 @@ export async function run(c) {
     await db.query(`create or replace function e2e_fail_log() returns trigger language plpgsql as $f$ begin raise exception 'e2e injected failure'; end $f$`);
     await db.query("create trigger e2e_fail_log_t before insert on deleted_products_log for each row execute function e2e_fail_log()");
     try {
+      const mark = c.mainLog.length;
       const r = await ipc(page, `api.products.softDelete(${p.id},'e2e')`);
-      expect(r.ok === false && /Failed query: insert into "deleted_products_log"/.test(r.err), JSON.stringify(r).slice(0, 300));
+      expect(biz(r, "ERROR_INTERNO") && (await failedAt(mark, "products:softDelete", "insert into \"deleted_products_log\"")), "an unexpected failure: generic public error + redacted diagnostic in the main log at the injected failure point: " + JSON.stringify(r).slice(0, 200));
       const row = await one("select status, stock from products where id=$1", [p.id]);
       expect(row.status === "active" && row.stock === 4, "product untouched: " + JSON.stringify(row));
       expect((await one("select count(*)::int n from inventory_movements where product_id=$1", [p.id])).n === 0, "no DELETE movement");

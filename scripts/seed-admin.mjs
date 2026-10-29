@@ -9,7 +9,12 @@ if (!DATABASE_URL) {
 }
 
 const ADMIN_NAME = process.env.ADMIN_NAME || 'Admin';
-const ADMIN_PIN = process.env.ADMIN_PIN || '0000';
+// No default PIN: use ADMIN_PIN or get a random one (printed once). A well-known PIN must never ship.
+const ADMIN_PIN = process.env.ADMIN_PIN || String(crypto.randomInt(0, 10000)).padStart(4, '0');
+if (!/^d{4}$/.test(ADMIN_PIN)) {
+  console.error('ADMIN_PIN debe tener exactamente 4 dígitos.');
+  process.exit(1);
+}
 
 function hashPin(pin) {
   return crypto.createHash('sha256').update(pin).digest('hex');

@@ -8,6 +8,9 @@ import { users as usersTable } from "./schema";
 import { SessionStore } from "./session-store";
 import { isTrustedFrame, isTrustedUrl } from "./sender-guard";
 import type { GuardOptions } from "./sender-guard";
+import { AuthError, BusinessError } from "./errors";
+import { guarded } from "./ipc-errors";
+import { LoginLimiter, loadLimiterConfig } from "./login-limiter";
 import type { Role } from "../common/types";
 
 export type SessionUser = { id: number; name: string; role: Role };
@@ -22,6 +25,10 @@ const FORBIDDEN = "No autorizado";
 const NO_SESSION = "Sesión no válida";
 const store = new SessionStore();
 
+// One limiter for the whole installation (the PIN space is tiny): another window cannot reset it.
+// POS_LOGIN_* overrides are honored only in development builds, never in a packaged app.
+const limiter = new LoginLimiter(loadLimiterConfig(app.isPackaged ? {} : process.env));
+
 export function hashPin(pin: string) {
   return crypto.createHash("sha256").update(pin).digest("hex");
 }
@@ -35,9 +42,22 @@ const trustedUrl = (url: string) => isTrustedUrl(url, guardOptions());
 
 function assertTrustedSender(event: IpcMainInvokeEvent) {
   if (!isTrustedFrame(event.senderFrame, event.sender.mainFrame, guardOptions())) {
-    throw new Error(FORBIDDEN);
+    throw new AuthError(FORBIDDEN);
   }
 }
+
+// Secrets that must never reach a log line or the renderer.
+function secrets(): string[] {
+  const url = process.env.DATABASE_URL ?? "";
+  let password = "";
+  try {
+    password = decodeURIComponent(new URL(url).password);
+  } catch {
+    /* not a URL */
+  }
+  return [url, password];
+}
+const logError = (line: string) => console.error(line);
 
 /** Resolves the session of the calling window, re-checking the DB on every call. */
 async function currentUser(event: IpcMainInvokeEvent): Promise<SessionUser | null> {
@@ -62,33 +82,54 @@ async function currentUser(event: IpcMainInvokeEvent): Promise<SessionUser | nul
 /**
  * Registers a protected IPC handler. Access is mandatory (deny by default):
  * the caller must be a trusted sender with a live, active session, and the
- * role is taken from the DB, never from the renderer.
+ * role is taken from the DB, never from the renderer. Unexpected errors never
+ * reach the renderer: they are logged (redacted) and replaced by [ERROR_INTERNO].
  */
 export function secureHandle<A extends unknown[], R>(
   channel: string,
   access: Access,
   fn: (ctx: IpcContext, ...args: A) => Promise<R> | R
 ) {
-  ipcMain.handle(channel, async (event, ...args) => {
-    assertTrustedSender(event);
-    const user = await currentUser(event);
-    if (!user) {
-      console.warn(`[auth] no session for ${channel}`);
-      throw new Error(NO_SESSION);
-    }
-    if (access === "admin" && user.role !== "admin") {
-      console.warn(`[auth] denied ${channel} (user=${user.id})`);
-      throw new Error(FORBIDDEN);
-    }
-    return fn({ event, user }, ...(args as A));
-  });
+  ipcMain.handle(channel, (event, ...args) =>
+    guarded(
+      channel,
+      async () => {
+        assertTrustedSender(event);
+        const user = await currentUser(event);
+        if (!user) {
+          console.warn(`[auth] no session for ${channel}`);
+          throw new AuthError(NO_SESSION);
+        }
+        if (access === "admin" && user.role !== "admin") {
+          console.warn(`[auth] denied ${channel} (user=${user.id})`);
+          throw new AuthError(FORBIDDEN);
+        }
+        return fn({ event, user }, ...(args as A));
+      },
+      logError,
+      secrets()
+    )
+  );
 }
 
-/** Public channels: auth:login, auth:me, auth:logout. */
+/** Public channels: auth:login, auth:me, auth:logout (same error boundary as the protected ones). */
 export function registerAuthHandlers() {
-  ipcMain.handle("auth:login", async (event, pin: unknown) => {
+  const publicHandle = <R>(channel: string, fn: (event: IpcMainInvokeEvent, ...args: unknown[]) => Promise<R> | R) =>
+    ipcMain.handle(channel, (event, ...args) =>
+      guarded(channel, () => fn(event, ...args), logError, secrets())
+    );
+
+  publicHandle("auth:login", async (event, pin) => {
     assertTrustedSender(event);
-    if (typeof pin !== "string") return null;
+    const state = limiter.check();
+    if (state.locked) {
+      // generic about users, explicit about the lock; even a correct PIN is refused while locked
+      throw new BusinessError("LOGIN_BLOQUEADO", `Demasiados intentos fallidos. Espera ${Math.ceil(state.retryAfterMs / 1000)} s.`);
+    }
+    if (typeof pin !== "string") {
+      limiter.fail();
+      return null;
+    }
     const rows = await db
       .select({
         id: usersTable.id,
@@ -96,20 +137,22 @@ export function registerAuthHandlers() {
         role: usersTable.role,
       })
       .from(usersTable)
-      .where(
-        and(eq(usersTable.pinHash, hashPin(pin)), eq(usersTable.active, true))
-      );
-    if (rows.length !== 1) return null;
+      .where(and(eq(usersTable.pinHash, hashPin(pin)), eq(usersTable.active, true)));
+    if (rows.length !== 1) {
+      limiter.fail(); // unknown PIN, wrong PIN and inactive user are indistinguishable
+      return null;
+    }
+    limiter.succeed();
     store.start(event.sender, rows[0].id, trustedUrl);
     return rows[0];
   });
 
-  ipcMain.handle("auth:me", async (event) => {
+  publicHandle("auth:me", async (event) => {
     assertTrustedSender(event);
     return await currentUser(event);
   });
 
-  ipcMain.handle("auth:logout", async (event) => {
+  publicHandle("auth:logout", async (event) => {
     assertTrustedSender(event);
     store.end(event.sender.id);
     return true;

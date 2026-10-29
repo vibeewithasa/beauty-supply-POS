@@ -1,4 +1,4 @@
-// READ-ONLY pre-flight for the integrity migrations (0004 sales/cash/inventory, 0005 returns). Run it BEFORE the app (or db:migrate)
+// READ-ONLY pre-flight for the integrity migrations (0004 sales/cash/inventory, 0005 returns, 0006 unique PIN). Run it BEFORE the app (or db:migrate)
 // touches an existing database:
 //
 //   node scripts/precheck-integrity.mjs                 # database from DATABASE_URL (.env)
@@ -37,6 +37,8 @@ const CHECKS = [
   ["cash_movements -> cash_sessions orphans", "BLOCKER", "select count(*)::int n from cash_movements x left join cash_sessions c on c.id = x.session_id where c.id is null"],
   ["inventory_movements -> products orphans", "BLOCKER", "select count(*)::int n from inventory_movements x left join products p on p.id = x.product_id where p.id is null"],
   ["deleted_products_log -> products orphans", "BLOCKER", "select count(*)::int n from deleted_products_log x left join products p on p.id = x.product_id where p.id is null"],
+  // migration 0006 (unique PIN)
+  ["users sharing the same PIN (pin_hash) - the unique index cannot be built", "BLOCKER", "select count(*)::int n from (select 1 from users group by pin_hash having count(*) > 1) d"],
   // migration 0005 (returns)
   ["returns -> sales orphans", "BLOCKER", "select count(*)::int n from returns x left join sales s on s.id = x.sale_id where s.id is null"],
   ["return_items -> returns orphans", "BLOCKER", "select count(*)::int n from return_items x left join returns r on r.id = x.return_id where r.id is null"],

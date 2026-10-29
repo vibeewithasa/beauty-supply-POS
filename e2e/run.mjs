@@ -9,11 +9,11 @@ import {
   makeData, createRecorder, summarize, scrub, sleep,
 } from "./lib/harness.mjs";
 
-const SUITES = { security: "./suites/security.mjs", ui: "./suites/ui.mjs", integration: "./suites/integration.mjs", catalog: "./suites/catalog.mjs", returns: "./suites/returns.mjs" };
+const SUITES = { security: "./suites/security.mjs", ui: "./suites/ui.mjs", integration: "./suites/integration.mjs", catalog: "./suites/catalog.mjs", returns: "./suites/returns.mjs", hardening: "./suites/hardening.mjs" };
 const arg = process.argv[2] || "all";
-const selected = arg === "all" ? ["security", "ui", "integration", "catalog", "returns"] : [arg];
+const selected = arg === "all" ? ["security", "ui", "integration", "catalog", "returns", "hardening"] : [arg];
 if (!selected.every((s) => SUITES[s])) {
-  console.error("Unknown suite. Use: security | ui | integration | catalog | returns | all");
+  console.error("Unknown suite. Use: security | ui | integration | catalog | returns | hardening | all");
   process.exit(2);
 }
 
@@ -53,7 +53,7 @@ try {
     const { results, rec, test, skip } = createRecorder(name, artifacts, () => page, { log });
     let launched;
     try {
-      launched = await launchApp(runDb, db, artifacts);
+      launched = await launchApp(runDb, db, artifacts, mod.env);
       currentApp = launched.app;
       page = launched.page;
       const ctx = {

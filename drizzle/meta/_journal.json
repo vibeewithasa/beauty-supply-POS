@@ -43,6 +43,13 @@
       "when": 1793270171323,
       "tag": "0005_returns_integrity",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793270819565,
+      "tag": "0006_users_unique_pin",
+      "breakpoints": true
     }
   ]
 }

@@ -13,7 +13,8 @@ import {
   priceChanges as priceChangesTable,
 } from "./schema";
 import { eq, or, and, desc, sql, gte, lte, isNull } from "drizzle-orm";
-import { hashPin, registerAuthHandlers, secureHandle } from "./auth";
+import { registerAuthHandlers, secureHandle } from "./auth";
+import { createUser, deactivateUser, listActiveUsers, updateUser } from "./users-service";
 import { createReturn } from "./returns-service";
 import {
   addInventoryMovement,
@@ -70,10 +71,6 @@ function handle<A extends unknown[], R>(
   const access = ACCESS[channel];
   if (!access) throw new Error("Sin política de acceso para " + channel);
   secureHandle(channel, access, fn);
-}
-
-function assertRole(role: unknown): asserts role is "admin" | "vendor" {
-  if (role !== "admin" && role !== "vendor") throw new Error("Rol inválido");
 }
 
 export function registerIpcHandlers() {
@@ -207,56 +204,17 @@ export function registerIpcHandlers() {
   });
 
   // ============= USERS =============
-  handle("users:getAll", async () => {
-    return await db
-      .select({
-        id: usersTable.id,
-        name: usersTable.name,
-        role: usersTable.role,
-        createdAt: usersTable.createdAt,
-      })
-      .from(usersTable)
-      .orderBy(usersTable.name);
-  });
+  // active users only: "deleted" users are deactivated (their history is kept) and no longer listed
+  handle("users:getAll", async () => listActiveUsers());
 
-  handle("users:create", async (ctx, data: any) => {
-    const { name, role, pin } = data;
-    assertRole(role);
-    const pinHash = hashPin(pin);
-    const [user] = await db
-      .insert(usersTable)
-      .values({ name, role, pinHash })
-      .returning({
-        id: usersTable.id,
-        name: usersTable.name,
-        role: usersTable.role,
-      });
-    return user;
-  });
+  handle("users:create", async (_ctx, data: unknown) => createUser(data));
 
-  handle("users:update", async (ctx, id: number, data: any) => {
-    assertRole(data.role);
-    const updateData: any = { name: data.name, role: data.role };
-    if (data.pin) {
-      updateData.pinHash = hashPin(data.pin);
-    }
-    const [user] = await db
-      .update(usersTable)
-      .set(updateData)
-      .where(eq(usersTable.id, id))
-      .returning({
-        id: usersTable.id,
-        name: usersTable.name,
-        role: usersTable.role,
-      });
-    return user;
-  });
+  handle("users:update", async (_ctx, id: unknown, data: unknown) =>
+    updateUser(id, data)
+  );
 
-  handle("users:delete", async (ctx, id: number) => {
-    if (id === ctx.user.id) throw new Error("No puedes eliminar tu propia cuenta");
-    await db.delete(usersTable).where(eq(usersTable.id, id));
-    return true;
-  });
+  // logical deactivation, never a physical delete (history references users)
+  handle("users:delete", async (ctx, id: unknown) => deactivateUser(ctx.user.id, id));
 
   // ============= INVENTORY =============
   handle("inventory:getMovements", async (ctx, productId?: number) => {
