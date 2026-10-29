@@ -28,6 +28,10 @@ export const invTypeEnum = pgEnum("inventory_type", [
 ]);
 export const cashMovementEnum = pgEnum("cash_movement_type", ["IN", "OUT"]);
 export const paymentMethodEnum = pgEnum("payment_method", ["cash", "card"]);
+// Refund settlement: a registered return is NOT a paid refund. 'pending' = owed, not yet paid out;
+// 'paid' is reserved for a future real settlement operation (nothing sets it today);
+// 'legacy_unspecified' marks returns registered before this state existed (never reinterpreted as paid).
+export const refundStatusEnum = pgEnum("refund_status", ["pending", "paid", "legacy_unspecified"]);
 export const cashSessionStatusEnum = pgEnum("cash_session_status", [
   "open",
   "closed",
@@ -207,22 +211,46 @@ export const saleItems = pgTable(
   ]
 );
 
-export const returns = pgTable("returns", {
-  id: serial("id").primaryKey(),
-  saleId: integer("sale_id").notNull(),
-  totalRefund: numeric("total_refund", { precision: 12, scale: 2 }),
-  reason: text("reason").notNull(),
-  processedBy: integer("processed_by").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
-    .defaultNow()
-    .notNull(),
-});
+export const returns = pgTable(
+  "returns",
+  {
+    id: serial("id").primaryKey(),
+    saleId: integer("sale_id")
+      .notNull()
+      .references(() => sales.id),
+    totalRefund: numeric("total_refund", { precision: 12, scale: 2 }),
+    refundStatus: refundStatusEnum("refund_status").notNull().default("pending"),
+    reason: text("reason").notNull(),
+    processedBy: integer("processed_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    check("returns_total_refund_non_negative", sql`${t.totalRefund} is null or ${t.totalRefund} >= 0`),
+  ]
+);
 
-export const returnItems = pgTable("return_items", {
-  id: serial("id").primaryKey(),
-  returnId: integer("return_id").notNull(),
-  saleItemId: integer("sale_item_id").notNull(),
-  productId: integer("product_id").notNull(),
-  quantity: integer("quantity").notNull(),
-  refundAmount: numeric("refund_amount", { precision: 12, scale: 2 }).notNull(),
-});
+export const returnItems = pgTable(
+  "return_items",
+  {
+    id: serial("id").primaryKey(),
+    returnId: integer("return_id")
+      .notNull()
+      .references(() => returns.id),
+    saleItemId: integer("sale_item_id")
+      .notNull()
+      .references(() => saleItems.id),
+    productId: integer("product_id")
+      .notNull()
+      .references(() => products.id),
+    quantity: integer("quantity").notNull(),
+    refundAmount: numeric("refund_amount", { precision: 12, scale: 2 }).notNull(),
+  },
+  (t) => [
+    check("return_items_quantity_positive", sql`${t.quantity} > 0`),
+    check("return_items_refund_non_negative", sql`${t.refundAmount} >= 0`),
+    // one line per sale item inside a return
+    uniqueIndex("return_items_return_sale_item_unique").on(t.returnId, t.saleItemId),
+  ]
+);

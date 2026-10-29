@@ -31,11 +31,11 @@ async function applyMigrations(name, folder = MIGRATIONS) {
   try { await migrate(drizzle(pool), { migrationsFolder: folder }); } finally { await pool.end(); }
 }
 // A migrations folder holding only the 4 historical migrations: reproduces the pre-0004 schema without any dump.
-function makePre4Folder() {
+function makeFolder(count) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "e2e-pre4-"));
   fs.mkdirSync(path.join(dir, "meta"));
   const journal = JSON.parse(fs.readFileSync(path.join(MIGRATIONS, "meta/_journal.json"), "utf8"));
-  journal.entries = journal.entries.slice(0, 4);
+  journal.entries = journal.entries.slice(0, count);
   fs.writeFileSync(path.join(dir, "meta/_journal.json"), JSON.stringify(journal));
   for (const e of journal.entries) fs.copyFileSync(path.join(MIGRATIONS, e.tag + ".sql"), path.join(dir, e.tag + ".sql"));
   return dir;
@@ -80,10 +80,12 @@ try {
     expect((await one(edb, "select count(*)::int n from pg_enum e join pg_type t on t.oid=e.enumtypid where t.typname='product_status' and e.enumlabel='deleted'")).n === 1, "enum value 'deleted'");
     expect((await one(edb, "select count(*)::int n from pg_constraint where connamespace='public'::regnamespace and not convalidated")).n === 0, "all constraints validated");
     const cnt = async (t) => (await one(edb, "select count(*)::int n from pg_constraint where connamespace='public'::regnamespace and contype=$1", [t])).n;
-    expect((await cnt("f")) === 6, "exactly 6 foreign keys, got " + (await cnt("f")));
-    expect((await cnt("c")) === 11, "exactly 11 CHECK constraints, got " + (await cnt("c")));
+    expect((await cnt("f")) === 10, "exactly 10 foreign keys, got " + (await cnt("f")));
+    expect((await cnt("c")) === 14, "exactly 14 CHECK constraints, got " + (await cnt("c")));
+    expect((await one(edb, "select string_agg(e.enumlabel, ',' order by e.enumsortorder) v from pg_enum e join pg_type t on t.oid=e.enumtypid where t.typname='refund_status'")).v === "pending,paid,legacy_unspecified", "refund_status enum");
+    expect((await one(edb, "select column_default d from information_schema.columns where table_name='returns' and column_name='refund_status'")).d.startsWith("'pending'"), "new returns default to pending");
     expect((await one(edb, "select count(*)::int n from pg_indexes where schemaname='public' and indexdef like 'CREATE UNIQUE INDEX%' and indexdef like '%WHERE%'")).n === 1, "exactly one partial unique index");
-    return "6 foreign keys, 11 CHECK, 1 partial unique index, enum value 'deleted'";
+    return "10 foreign keys, 14 CHECK, 1 partial unique index, enum values 'deleted' and refund_status";
   });
   await test("MIG-02.constraints_reject_bad_data_at_the_database_level", "migration", async () => {
     await edb.query("insert into users(name,pin_hash,role) values('m','x','admin')");
@@ -106,6 +108,17 @@ try {
     await expectSqlError(edb, "insert into sales(user_id,cash_session_id,total,payment_method) values(1,999,'1','cash')", "23503", "unknown cash session");
     await edb.query("insert into inventory_movements(product_id,user_id,type,amount,reason) values(1,1,'IN',1,'x')");
     await expectSqlError(edb, "delete from products where sku='MIG-1'", "23503", "product with inventory history cannot be physically deleted");
+    // returns (migration 0005)
+    await edb.query("insert into sale_items(sale_id,product_id,quantity,unit_price,subtotal) values(1,1,2,'1','2')");
+    await edb.query("insert into returns(sale_id,reason,processed_by,total_refund) values(1,'x',1,'1')");
+    await expectSqlError(edb, "insert into returns(sale_id,reason,processed_by) values(999,'x',1)", "23503", "return of an unknown sale");
+    await expectSqlError(edb, "update returns set total_refund='-1'", "23514", "negative refund");
+    await expectSqlError(edb, "insert into return_items(return_id,sale_item_id,product_id,quantity,refund_amount) values((select min(id) from returns),(select min(id) from sale_items),1,0,'0')", "23514", "return quantity 0");
+    await expectSqlError(edb, "insert into return_items(return_id,sale_item_id,product_id,quantity,refund_amount) values((select min(id) from returns),999,1,1,'1')", "23503", "return of an unknown sale line");
+    await expectSqlError(edb, "insert into return_items(return_id,sale_item_id,product_id,quantity,refund_amount) values(999,(select min(id) from sale_items),1,1,'1')", "23503", "return line of an unknown return");
+    await edb.query("insert into return_items(return_id,sale_item_id,product_id,quantity,refund_amount) values((select min(id) from returns),(select min(id) from sale_items),1,1,'1')");
+    await expectSqlError(edb, "insert into return_items(return_id,sale_item_id,product_id,quantity,refund_amount) values((select min(id) from returns),(select min(id) from sale_items),1,1,'1')", "23505", "same sale line twice in one return");
+    expect((await edb.query("select refund_status from returns")).rows[0].refund_status === "pending", "a return inserted without a state is 'pending'");
     // valid closing is accepted
     await edb.query("update cash_sessions set status='closed', closed_at=now(), closed_by=1, final_amount='10'");
     await edb.query("insert into cash_sessions(opened_by,initial_amount,current_amount) values(1,'1','1')"); // a new one may open after closing
@@ -142,10 +155,12 @@ try {
       const postFull = await full(), postSess = await sessions(), postMig = await migrations();
 
       // 1) migrations: the 4 old rows untouched, exactly one new row matching the file
-      expect(postMig.length === 5 && JSON.stringify(postMig.slice(0, 4)) === JSON.stringify(preMig), "the 4 historical migration rows are unchanged");
-      const file = fs.readFileSync(path.join(MIGRATIONS, "0004_integrity_constraints.sql"), "utf8");
-      const journal = JSON.parse(fs.readFileSync(path.join(MIGRATIONS, "meta/_journal.json"), "utf8")).entries[4];
-      expect(postMig[4].hash === crypto.createHash("sha256").update(file).digest("hex") && Number(postMig[4].created_at) === journal.when, "0004 recorded once, with the hash of the file");
+      expect(postMig.length === JOURNAL && JSON.stringify(postMig.slice(0, 4)) === JSON.stringify(preMig), "the 4 historical migration rows are unchanged");
+      const entries = JSON.parse(fs.readFileSync(path.join(MIGRATIONS, "meta/_journal.json"), "utf8")).entries;
+      for (let i = 4; i < entries.length; i++) {
+        const file = fs.readFileSync(path.join(MIGRATIONS, entries[i].tag + ".sql"), "utf8");
+        expect(postMig[i].hash === crypto.createHash("sha256").update(file).digest("hex") && Number(postMig[i].created_at) === entries[i].when, entries[i].tag + " recorded once, with the hash of the file");
+      }
 
       // 2) every other business table: identical count AND identical full-row hash
       const untouched = tables.filter((t) => t !== "cash_sessions");
@@ -163,7 +178,7 @@ try {
       // 4) idempotent
       await applyMigrations(legacy);
       expect(JSON.stringify(await migrations()) === JSON.stringify(postMig) && JSON.stringify(await full()) === JSON.stringify(postFull), "second run changes nothing");
-      return `status open->closed on session ids [${stale}] only; ${untouched.length} other tables byte-identical; 4 old migration rows unchanged + 1 new; re-run is a no-op`;
+      return `status open->closed on session ids [${stale}] only; ${untouched.length} other tables byte-identical; 4 old migration rows unchanged + ${JOURNAL - 4} new; re-run is a no-op`;
     });
     await ldb.end();
 
@@ -181,6 +196,7 @@ try {
       expect((await one(bdb, "select count(*)::int n from drizzle.__drizzle_migrations")).n === 4, "migration not recorded");
       expect((await one(bdb, "select count(*)::int n from pg_enum e join pg_type t on t.oid=e.enumtypid where t.typname='product_status' and e.enumlabel='deleted'")).n === 0, "enum value rolled back");
       expect((await one(bdb, "select count(*)::int n from pg_indexes where indexname='cash_sessions_single_open'")).n === 0, "no partial index");
+      expect((await one(bdb, "select (to_regtype('refund_status') is null) as gone")).gone, "0005's enum type rolled back too (both migrations share one transaction)");
       expect((await one(bdb, "select count(*)::int n from pg_constraint where conname like '%_non_negative' or conname like '%_fk' or conname like '%_positive' or conname='cash_sessions_state_coherent'")).n === 0, "no partial constraints");
       expect((await one(bdb, "select count(*)::int n from cash_sessions where closed_at is not null and status='open'")).n >= 1, "the reconciliation UPDATE was rolled back too");
       expect((await fingerprint(bdb)) === snapshot, "data untouched after the failed attempt");
@@ -191,7 +207,7 @@ try {
   // ------------------------------------------------------------ 3b. precheck vs the real constraint, state by state
   // For every combination: build a pre-0004 database, insert one session, run the precheck, then really apply 0004.
   // The precheck verdict must match the migration outcome, and the precheck must not write anything.
-  const pre4 = makePre4Folder();
+  const pre4 = makeFolder(4);
   const SCENARIOS = [
     ["open_coherent", "'open', null, null, null", true],
     ["closed_coherent", "'closed', now(), 1, '5'", true],
@@ -230,6 +246,65 @@ try {
     });
   }
   fs.rmSync(pre4, { recursive: true, force: true });
+
+  // ------------------------------------------------------------ 3c. returns migration (0005) on legacy returns data
+  const pre5 = makeFolder(5);
+  const seedSale = async (db) => {
+    await db.query("insert into products(sku,name,price,stock) values('R-1','r','10.00',5)");
+    await db.query("insert into cash_sessions(opened_by,initial_amount,current_amount,status,closed_at,closed_by,final_amount) values(1,'1','1','closed',now(),1,'1')");
+    await db.query("insert into sales(user_id,cash_session_id,total,payment_method) values(1,1,'20.00','cash')");
+    await db.query("insert into sale_items(sale_id,product_id,quantity,unit_price,subtotal) values(1,1,2,'10.00','20.00')");
+  };
+  await test("MIG-07.legacy_returns_are_marked_legacy_unspecified_never_paid_or_pending", "migration", async () => {
+    const name = await newDb();
+    await applyMigrations(name, pre5);
+    const db = await connectRunDb(name);
+    try {
+      await seedSale(db);
+      await db.query("insert into returns(sale_id,total_refund,reason,processed_by) values(1,'10.00','legacy',1), (1,null,'legacy no total',1)");
+      await db.query("insert into return_items(return_id,sale_item_id,product_id,quantity,refund_amount) values(1,1,1,1,'10.00')");
+      const before = (await db.query("select id, sale_id, total_refund, reason, processed_by, created_at from returns order by id")).rows;
+      const pre = precheck(name);
+      expect(pre.code === 0 && /existing returns/.test(pre.out), "precheck accepts clean legacy returns:\n" + pre.out);
+      await applyMigrations(name);
+      const after = (await db.query("select id, sale_id, total_refund, reason, processed_by, created_at, refund_status from returns order by id")).rows;
+      expect(after.length === 2 && after.every((r) => r.refund_status === "legacy_unspecified"), "legacy rows: " + JSON.stringify(after.map((r) => r.refund_status)));
+      expect(JSON.stringify(after.map(({ refund_status, ...rest }) => rest)) === JSON.stringify(before), "every other column of the legacy returns is unchanged");
+      await db.query("insert into returns(sale_id,total_refund,reason,processed_by) values(1,'1.00','new',1)");
+      expect((await one(db, "select refund_status from returns where reason='new'")).refund_status === "pending", "returns created after the migration start as pending");
+      expect((await one(db, "select count(*)::int n from returns where refund_status='paid'")).n === 0, "nothing is ever 'paid' by the migration");
+      return "legacy -> legacy_unspecified, new -> pending, no 'paid'";
+    } finally { await db.end(); }
+  });
+  const RETURN_BLOCKERS = [
+    ["orphan_return_line", "insert into return_items(return_id,sale_item_id,product_id,quantity,refund_amount) values(999,1,1,1,'1')", /return_items -> returns orphans/],
+    ["return_of_unknown_sale", "insert into returns(sale_id,reason,processed_by) values(999,'x',1)", /returns -> sales orphans/],
+    ["zero_quantity_line", "insert into returns(sale_id,reason,processed_by) values(1,'x',1); insert into return_items(return_id,sale_item_id,product_id,quantity,refund_amount) values(1,1,1,0,'0')", /return_items with quantity <= 0/],
+    ["negative_refund", "insert into returns(sale_id,total_refund,reason,processed_by) values(1,'-5','x',1)", /negative amounts/],
+    ["duplicate_lines_in_one_return", "insert into returns(sale_id,reason,processed_by) values(1,'x',1); insert into return_items(return_id,sale_item_id,product_id,quantity,refund_amount) values(1,1,1,1,'1'),(1,1,1,1,'1')", /duplicate \(return_id, sale_item_id\)/],
+  ];
+  for (const [label, sqlText, re] of RETURN_BLOCKERS) {
+    await test("MIG-08.returns_blocker_is_reported_and_rolls_back::" + label, "migration", async () => {
+      const name = await newDb();
+      await applyMigrations(name, pre5);
+      const db = await connectRunDb(name);
+      try {
+        await seedSale(db);
+        await db.query(sqlText);
+        const before = await fingerprint(db);
+        const pre = precheck(name);
+        expect(pre.code === 1 && re.test(pre.out), "precheck must flag it:\n" + pre.out);
+        expect((await fingerprint(db)) === before, "precheck wrote something");
+        let failed = false;
+        try { await applyMigrations(name); } catch { failed = true; }
+        expect(failed, "0005 must fail on this data");
+        expect((await one(db, "select count(*)::int n from drizzle.__drizzle_migrations")).n === 5, "nothing recorded");
+        expect((await one(db, "select (to_regtype('refund_status') is null) as gone")).gone, "enum rolled back");
+        expect((await fingerprint(db)) === before, "data untouched");
+      } finally { await db.end(); }
+    });
+  }
+  fs.rmSync(pre5, { recursive: true, force: true });
 
   // ------------------------------------------------------------ 4. startup must abort when migrations fail
   await test("MIG-05.app_refuses_to_run_when_migrations_fail", "migration", async () => {

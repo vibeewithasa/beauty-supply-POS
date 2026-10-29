@@ -14,6 +14,7 @@ import {
 } from "./schema";
 import { eq, or, and, desc, sql, gte, lte, isNull } from "drizzle-orm";
 import { hashPin, registerAuthHandlers, secureHandle } from "./auth";
+import { createReturn } from "./returns-service";
 import {
   addInventoryMovement,
   createPriceChange,
@@ -193,65 +194,9 @@ export function registerIpcHandlers() {
   });
 
   // ============= RETURNS =============
-  handle("returns:create", async (ctx, data: any) => {
-    const { saleId, items, reason } = data;
-    const userId = ctx.user.id;
-
-    const result = await db.transaction(async (tx) => {
-      const [returnRecord] = await tx
-        .insert(returnsTable)
-        .values({
-          saleId,
-          reason,
-          processedBy: userId,
-        })
-        .returning();
-
-      let totalRefund = 0;
-
-      for (const item of items) {
-        const itemPrice =
-          typeof item.unitPrice === "string"
-            ? parseFloat(item.unitPrice)
-            : item.unitPrice;
-        const refundAmount = item.quantity * itemPrice;
-        totalRefund += refundAmount;
-
-        await tx.insert(returnItemsTable).values({
-          returnId: returnRecord.id,
-          saleItemId: item.saleItemId,
-          productId: item.productId,
-          quantity: item.quantity,
-          refundAmount: refundAmount.toString(),
-        });
-
-        // Increase stock
-        await tx
-          .update(productsTable)
-          .set({ stock: sql`${productsTable.stock} + ${item.quantity}` })
-          .where(eq(productsTable.id, item.productId));
-
-        // Record inventory movement
-        await tx.insert(inventoryMovementsTable).values({
-          productId: item.productId,
-          type: "IN" as any,
-          amount: item.quantity,
-          reason: `Devolución #${returnRecord.id} de Venta #${saleId}`,
-          userId,
-        });
-      }
-
-      // Update return with total refund
-      await tx
-        .update(returnsTable)
-        .set({ totalRefund: totalRefund.toString() })
-        .where(eq(returnsTable.id, returnRecord.id));
-
-      return { ...returnRecord, totalRefund };
-    });
-
-    return result;
-  });
+  handle("returns:create", async (ctx, data: unknown) =>
+    createReturn(ctx.user.id, data)
+  );
 
   handle("returns:getAll", async () => {
     return await db
@@ -480,9 +425,10 @@ export function registerIpcHandlers() {
       .from(usersTable)
       .where(eq(usersTable.active, true));
 
-    // Devoluciones de hoy
+    // Devoluciones de hoy, por estado de liquidación (pendiente != pagado)
     const returnsResult = await db
       .select({
+        status: returnsTable.refundStatus,
         total: sql<string>`COALESCE(SUM(${returnsTable.totalRefund}::numeric), 0)`,
         count: sql<number>`COUNT(*)::int`,
       })
@@ -492,7 +438,14 @@ export function registerIpcHandlers() {
           gte(returnsTable.createdAt, today),
           lte(returnsTable.createdAt, tomorrow)
         )
-      );
+      )
+      .groupBy(returnsTable.refundStatus);
+    const returnsBy = (status: string) => {
+      const r = returnsResult.find((x) => x.status === status);
+      return { total: r?.total || "0", count: r?.count || 0 };
+    };
+    const returnsAllTotal = returnsResult.reduce((a, x) => a + Number(x.total), 0);
+    const returnsAllCount = returnsResult.reduce((a, x) => a + x.count, 0);
 
     // Stock total
     const stockResult = await db
@@ -569,8 +522,12 @@ export function registerIpcHandlers() {
         total: usersResult[0]?.total || 0,
       },
       returns: {
-        total: returnsResult[0]?.total || "0",
-        count: returnsResult[0]?.count || 0,
+        // registered returns (all states). A return is NOT money handed back: see pending / paid.
+        total: returnsAllTotal.toFixed(2),
+        count: returnsAllCount,
+        pending: returnsBy("pending"), // owed to customers, not yet paid out
+        paid: returnsBy("paid"), // actually paid (no settlement operation exists yet)
+        legacy: returnsBy("legacy_unspecified"), // registered before the state existed
       },
       stock: {
         total: stockResult[0]?.total || 0,

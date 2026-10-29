@@ -40,6 +40,9 @@ interface DashboardStats {
   returns: {
     total: string;
     count: number;
+    pending: { total: string; count: number };
+    paid: { total: string; count: number };
+    legacy: { total: string; count: number };
   };
   stock: {
     total: number;
@@ -88,7 +91,9 @@ export default function DashboardPage() {
 
   const todaySalesTotal = stats ? parseFloat(stats.todaySales.total) : 0;
   const weekSalesTotal = stats ? parseFloat(stats.weekSales.total) : 0;
-  const returnsTotal = stats ? parseFloat(stats.returns.total) : 0;
+  // a registered return is not money handed back: pending refunds are shown apart from paid ones
+  const refundsPending = stats ? parseFloat(stats.returns.pending.total) : 0;
+  const refundsPaid = stats ? parseFloat(stats.returns.paid.total) : 0;
 
   const cashTotal =
     stats?.paymentMethods.find((pm) => pm.method === "cash")?.total || "0";
@@ -141,10 +146,16 @@ export default function DashboardPage() {
             variant={stats?.cashSession ? "default" : "warning"}
           />
           <StatCard
-            label="Devoluciones"
-            value={`$${returnsTotal.toFixed(2)}`}
+            label="Reembolsos pendientes de pago (hoy)"
+            value={`$${refundsPending.toFixed(2)}`}
             icon={<RotateCcw />}
-            variant={returnsTotal > 0 ? "warning" : "default"}
+            variant={refundsPending > 0 ? "warning" : "default"}
+          />
+          <StatCard
+            label="Reembolsos pagados (hoy)"
+            value={`$${refundsPaid.toFixed(2)}`}
+            icon={<RotateCcw />}
+            variant="default"
           />
           <StatCard
             label="Stock Total"

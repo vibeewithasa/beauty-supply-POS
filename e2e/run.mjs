@@ -9,11 +9,11 @@ import {
   makeData, createRecorder, summarize, scrub, sleep,
 } from "./lib/harness.mjs";
 
-const SUITES = { security: "./suites/security.mjs", ui: "./suites/ui.mjs", integration: "./suites/integration.mjs", catalog: "./suites/catalog.mjs" };
+const SUITES = { security: "./suites/security.mjs", ui: "./suites/ui.mjs", integration: "./suites/integration.mjs", catalog: "./suites/catalog.mjs", returns: "./suites/returns.mjs" };
 const arg = process.argv[2] || "all";
-const selected = arg === "all" ? ["security", "ui", "integration", "catalog"] : [arg];
+const selected = arg === "all" ? ["security", "ui", "integration", "catalog", "returns"] : [arg];
 if (!selected.every((s) => SUITES[s])) {
-  console.error("Unknown suite. Use: security | ui | integration | catalog | all");
+  console.error("Unknown suite. Use: security | ui | integration | catalog | returns | all");
   process.exit(2);
 }
 
