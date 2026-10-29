@@ -184,8 +184,7 @@ export async function run(c) {
     expect(r.ok === false, "invalid role must be rejected");
   });
   await test("C5.non_auth_errors_do_not_log_the_user_out", "security", async () => {
-    const p = await data.product("C5", "5.00", 1);
-    const r = await ipc(page, `api.products.softDelete(${p.id},'c5')`); // fails with a DB error (known BUG-2)
+    const r = await ipc(page, "api.products.softDelete(987654321,'c5')"); // business error: product does not exist
     expect(r.ok === false && !denied(r), "expected a non-auth failure: " + JSON.stringify(r));
     expect(new URL(page.url()).pathname === "/dashboard", "stays on the dashboard: " + page.url());
     expect((await me()) !== null, "session intact");

@@ -29,6 +29,13 @@
       "when": 1764916307321,
       "tag": "0003_aromatic_selene",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793264664041,
+      "tag": "0004_integrity_constraints",
+      "breakpoints": true
     }
   ]
 }

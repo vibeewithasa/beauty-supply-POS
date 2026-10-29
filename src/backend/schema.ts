@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   pgTable,
   serial,
@@ -8,12 +9,16 @@ import {
   boolean,
   pgEnum,
   numeric,
+  check,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 export const roleEnum = pgEnum("role", ["admin", "vendor"]);
+// 'deleted' = logical deletion (products:softDelete); 'inactive' stays "not for sale, not deleted".
 export const productStatusEnum = pgEnum("product_status", [
   "active",
   "inactive",
+  "deleted",
 ]);
 export const invTypeEnum = pgEnum("inventory_type", [
   "IN",
@@ -39,26 +44,38 @@ export const users = pgTable("users", {
     .notNull(),
 });
 
-export const products = pgTable("products", {
-  id: serial("id").primaryKey(),
-  sku: varchar("sku", { length: 64 }).notNull().unique(),
-  name: varchar("name", { length: 255 }).notNull(),
-  price: numeric("price", { precision: 12, scale: 2 }).notNull(),
-  stock: integer("stock").notNull().default(0),
-  barcode: varchar("barcode", { length: 128 }),
-  category: varchar("category", { length: 128 }),
-  status: productStatusEnum("status").notNull().default("active"),
-  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
-    .defaultNow()
-    .notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" })
-    .defaultNow()
-    .notNull(),
-});
+export const products = pgTable(
+  "products",
+  {
+    id: serial("id").primaryKey(),
+    sku: varchar("sku", { length: 64 }).notNull().unique(),
+    name: varchar("name", { length: 255 }).notNull(),
+    price: numeric("price", { precision: 12, scale: 2 }).notNull(),
+    stock: integer("stock").notNull().default(0),
+    barcode: varchar("barcode", { length: 128 }),
+    category: varchar("category", { length: 128 }),
+    status: productStatusEnum("status").notNull().default("active"),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    check("products_stock_non_negative", sql`${t.stock} >= 0`),
+    check("products_price_non_negative", sql`${t.price} >= 0`),
+    // Invariant of the logical deletion: a deleted product holds no stock, whatever handler touches it.
+    // Compared as text: the new enum value cannot be used as a literal in the migration that adds it.
+    check("products_deleted_has_no_stock", sql`${t.status}::text <> 'deleted' or ${t.stock} = 0`),
+  ]
+);
 
 export const inventoryMovements = pgTable("inventory_movements", {
   id: serial("id").primaryKey(),
-  productId: integer("product_id").notNull(),
+  productId: integer("product_id")
+    .notNull()
+    .references(() => products.id),
   userId: integer("user_id").notNull(),
   type: invTypeEnum("type").notNull(),
   amount: integer("amount").notNull(),
@@ -70,7 +87,9 @@ export const inventoryMovements = pgTable("inventory_movements", {
 
 export const deletedProductsLog = pgTable("deleted_products_log", {
   id: serial("id").primaryKey(),
-  productId: integer("product_id").notNull(),
+  productId: integer("product_id")
+    .notNull()
+    .references(() => products.id),
   sku: varchar("sku", { length: 64 }).notNull(),
   name: varchar("name", { length: 255 }).notNull(),
   deletedBy: integer("deleted_by").notNull(),
@@ -92,57 +111,101 @@ export const priceChanges = pgTable("price_changes", {
     .notNull(),
 });
 
-export const cashSessions = pgTable("cash_sessions", {
-  id: serial("id").primaryKey(),
-  openedBy: integer("opened_by").notNull(),
-  openedAt: timestamp("opened_at", { withTimezone: true, mode: "date" })
-    .defaultNow()
-    .notNull(),
-  initialAmount: numeric("initial_amount", {
-    precision: 12,
-    scale: 2,
-  }).notNull(),
-  currentAmount: numeric("current_amount", {
-    precision: 12,
-    scale: 2,
-  }).notNull(),
-  finalAmount: numeric("final_amount", { precision: 12, scale: 2 }),
-  status: cashSessionStatusEnum("status").notNull().default("open"),
-  closedBy: integer("closed_by"),
-  closedAt: timestamp("closed_at", { withTimezone: true, mode: "date" }),
-});
+export const cashSessions = pgTable(
+  "cash_sessions",
+  {
+    id: serial("id").primaryKey(),
+    openedBy: integer("opened_by").notNull(),
+    openedAt: timestamp("opened_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    initialAmount: numeric("initial_amount", {
+      precision: 12,
+      scale: 2,
+    }).notNull(),
+    currentAmount: numeric("current_amount", {
+      precision: 12,
+      scale: 2,
+    }).notNull(),
+    finalAmount: numeric("final_amount", { precision: 12, scale: 2 }),
+    status: cashSessionStatusEnum("status").notNull().default("open"),
+    closedBy: integer("closed_by"),
+    closedAt: timestamp("closed_at", { withTimezone: true, mode: "date" }),
+  },
+  (t) => [
+    // The installation has ONE shared cash register: at most one session without closed_at.
+    uniqueIndex("cash_sessions_single_open")
+      .on(sql`(1)`)
+      .where(sql`${t.closedAt} is null`),
+    check("cash_sessions_initial_non_negative", sql`${t.initialAmount} >= 0`),
+    check("cash_sessions_current_non_negative", sql`${t.currentAmount} >= 0`),
+    check(
+      "cash_sessions_final_non_negative",
+      sql`${t.finalAmount} is null or ${t.finalAmount} >= 0`
+    ),
+    check(
+      "cash_sessions_state_coherent",
+      sql`(${t.status} = 'open' and ${t.closedAt} is null and ${t.closedBy} is null and ${t.finalAmount} is null) or (${t.status} = 'closed' and ${t.closedAt} is not null and ${t.closedBy} is not null and ${t.finalAmount} is not null)`
+    ),
+  ]
+);
 
-export const cashMovements = pgTable("cash_movements", {
-  id: serial("id").primaryKey(),
-  sessionId: integer("session_id").notNull(),
-  userId: integer("user_id").notNull(),
-  type: cashMovementEnum("type").notNull(),
-  amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
-  reason: text("reason").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
-    .defaultNow()
-    .notNull(),
-});
+export const cashMovements = pgTable(
+  "cash_movements",
+  {
+    id: serial("id").primaryKey(),
+    sessionId: integer("session_id")
+      .notNull()
+      .references(() => cashSessions.id),
+    userId: integer("user_id").notNull(),
+    type: cashMovementEnum("type").notNull(),
+    amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
+    reason: text("reason").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  // 0 is allowed: card sales are recorded as informational movements of amount 0.
+  (t) => [check("cash_movements_amount_non_negative", sql`${t.amount} >= 0`)]
+);
 
-export const sales = pgTable("sales", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull(),
-  cashSessionId: integer("cash_session_id"),
-  total: numeric("total", { precision: 12, scale: 2 }).notNull(),
-  paymentMethod: paymentMethodEnum("payment_method").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
-    .defaultNow()
-    .notNull(),
-});
+export const sales = pgTable(
+  "sales",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").notNull(),
+    cashSessionId: integer("cash_session_id").references(() => cashSessions.id),
+    total: numeric("total", { precision: 12, scale: 2 }).notNull(),
+    paymentMethod: paymentMethodEnum("payment_method").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [check("sales_total_non_negative", sql`${t.total} >= 0`)]
+);
 
-export const saleItems = pgTable("sale_items", {
-  id: serial("id").primaryKey(),
-  saleId: integer("sale_id").notNull(),
-  productId: integer("product_id").notNull(),
-  quantity: integer("quantity").notNull(),
-  unitPrice: numeric("unit_price", { precision: 12, scale: 2 }).notNull(),
-  subtotal: numeric("subtotal", { precision: 12, scale: 2 }).notNull(),
-});
+export const saleItems = pgTable(
+  "sale_items",
+  {
+    id: serial("id").primaryKey(),
+    saleId: integer("sale_id")
+      .notNull()
+      .references(() => sales.id),
+    productId: integer("product_id")
+      .notNull()
+      .references(() => products.id),
+    quantity: integer("quantity").notNull(),
+    unitPrice: numeric("unit_price", { precision: 12, scale: 2 }).notNull(),
+    subtotal: numeric("subtotal", { precision: 12, scale: 2 }).notNull(),
+  },
+  (t) => [
+    check("sale_items_quantity_positive", sql`${t.quantity} > 0`),
+    check(
+      "sale_items_amounts_non_negative",
+      sql`${t.unitPrice} >= 0 and ${t.subtotal} >= 0`
+    ),
+  ]
+);
 
 export const returns = pgTable("returns", {
   id: serial("id").primaryKey(),

@@ -14,6 +14,14 @@ import {
 } from "./schema";
 import { eq, or, and, desc, sql, gte, lte, isNull } from "drizzle-orm";
 import { hashPin, registerAuthHandlers, secureHandle } from "./auth";
+import { BusinessError } from "./errors";
+import {
+  addCashMovement,
+  closeCashSession,
+  createSale,
+  openCashSession,
+  softDeleteProduct,
+} from "./pos-service";
 import type { Access, IpcContext } from "./auth";
 
 // Access policy for every protected channel. A channel without an entry cannot
@@ -102,6 +110,14 @@ export function registerIpcHandlers() {
   });
 
   handle("products:update", async (ctx, id: number, data: any) => {
+    // Deletion has its own audited path; a deleted product can neither be edited nor resurrected here.
+    if (data?.status === "deleted") {
+      throw new BusinessError("OPERACION_INVALIDA", "Usa la eliminación lógica para eliminar productos");
+    }
+    const [current] = await db.select({ status: productsTable.status }).from(productsTable).where(eq(productsTable.id, id));
+    if (current?.status === "deleted") {
+      throw new BusinessError("PRODUCTO_ELIMINADO", "El producto está eliminado y no puede modificarse");
+    }
     const processedData = {
       ...data,
       ...(data.price && {
@@ -117,47 +133,8 @@ export function registerIpcHandlers() {
     return product;
   });
 
-  handle(
-    "products:softDelete",
-    async (ctx, id: number, reason: string) => {
-      const userId = ctx.user.id;
-      const [product] = await db
-        .select()
-        .from(productsTable)
-        .where(eq(productsTable.id, id));
-
-      if (!product) return null;
-
-      await db.transaction(async (tx) => {
-        // Mark as deleted
-        await tx
-          .update(productsTable)
-          .set({ status: "deleted" as any, updatedAt: new Date() })
-          .where(eq(productsTable.id, id));
-
-        // Log deletion
-        await tx.insert(deletedProductsLogTable).values({
-          productId: id,
-          sku: product.sku,
-          name: product.name,
-          reason,
-          deletedBy: userId,
-        });
-
-        // Record inventory movement
-        if (product.stock > 0) {
-          await tx.insert(inventoryMovementsTable).values({
-            productId: id,
-            type: "DELETE" as any,
-            amount: -product.stock,
-            reason: `Producto eliminado: ${reason}`,
-            userId,
-          });
-        }
-      });
-
-      return true;
-    }
+  handle("products:softDelete", async (ctx, id: unknown, reason: unknown) =>
+    softDeleteProduct(ctx.user.id, id, reason)
   );
 
   // ============= CASH SESSIONS =============
@@ -171,67 +148,17 @@ export function registerIpcHandlers() {
     return session ?? null;
   });
 
-  handle(
-    "cash:openSession",
-    async (ctx, initialAmount: number) => {
-      const userId = ctx.user.id;
-      const [session] = await db
-        .insert(cashSessionsTable)
-        .values({
-          openedBy: userId,
-          initialAmount: initialAmount.toString(),
-          currentAmount: initialAmount.toString(),
-        })
-        .returning();
-      return session;
-    }
+  handle("cash:openSession", async (ctx, initialAmount: unknown) =>
+    openCashSession(ctx.user.id, initialAmount)
   );
 
-  handle(
-    "cash:closeSession",
-    async (ctx, sessionId: number, realTotal: number) => {
-      const userId = ctx.user.id;
-      const [session] = await db
-        .update(cashSessionsTable)
-        .set({
-          closedAt: new Date(),
-          closedBy: userId,
-          finalAmount: realTotal.toString(),
-        })
-        .where(eq(cashSessionsTable.id, sessionId))
-        .returning();
-      return session;
-    }
+  handle("cash:closeSession", async (ctx, sessionId: unknown, realTotal: unknown) =>
+    closeCashSession(ctx.user.id, sessionId, realTotal)
   );
 
-  handle("cash:addMovement", async (ctx, data: any) => {
-    const { sessionId, type, amount, reason } = data;
-    const userId = ctx.user.id;
-
-    const [movement] = await db
-      .insert(cashMovementsTable)
-      .values({ sessionId, type, amount: amount.toString(), reason, userId })
-      .returning();
-
-    // Update session current amount
-    if (type === "IN") {
-      await db
-        .update(cashSessionsTable)
-        .set({
-          currentAmount: sql`${cashSessionsTable.currentAmount} + ${amount}`,
-        })
-        .where(eq(cashSessionsTable.id, sessionId));
-    } else {
-      await db
-        .update(cashSessionsTable)
-        .set({
-          currentAmount: sql`${cashSessionsTable.currentAmount} - ${amount}`,
-        })
-        .where(eq(cashSessionsTable.id, sessionId));
-    }
-
-    return movement;
-  });
+  handle("cash:addMovement", async (ctx, data: unknown) =>
+    addCashMovement(ctx.user.id, data)
+  );
 
   handle("cash:getMovements", async (ctx, sessionId: number) => {
     return await db
@@ -252,84 +179,9 @@ export function registerIpcHandlers() {
   });
 
   // ============= SALES =============
-  handle("sales:create", async (ctx, data: any) => {
-    const { items, total, paymentMethod, sessionId } = data;
-    const userId = ctx.user.id;
-
-    const result = await db.transaction(async (tx) => {
-      // Create sale
-      const [sale] = await tx
-        .insert(salesTable)
-        .values({
-          userId,
-          cashSessionId: sessionId,
-          total: total.toString(),
-          paymentMethod,
-        })
-        .returning();
-
-      // Create sale items and update stock
-      for (const item of items) {
-        await tx.insert(saleItemsTable).values({
-          saleId: sale.id,
-          productId: item.productId,
-          quantity: item.quantity,
-          unitPrice: item.unitPrice.toString(),
-          subtotal: item.subtotal.toString(),
-        });
-
-        // Decrease stock
-        await tx
-          .update(productsTable)
-          .set({ stock: sql`${productsTable.stock} - ${item.quantity}` })
-          .where(eq(productsTable.id, item.productId));
-
-        // Record inventory movement
-        await tx.insert(inventoryMovementsTable).values({
-          productId: item.productId,
-          type: "OUT" as any,
-          amount: -item.quantity,
-          reason: `Venta #${sale.id}`,
-          userId,
-        });
-      }
-
-      // Update cash session and register movement
-      if (sessionId) {
-        if (paymentMethod === "cash") {
-          // Update current amount for cash payments
-          await tx
-            .update(cashSessionsTable)
-            .set({
-              currentAmount: sql`${cashSessionsTable.currentAmount} + ${total}`,
-            })
-            .where(eq(cashSessionsTable.id, sessionId));
-
-          // Register cash movement
-          await tx.insert(cashMovementsTable).values({
-            sessionId,
-            type: "IN" as any,
-            amount: total.toString(),
-            reason: `Venta #${sale.id} - Efectivo`,
-            userId,
-          });
-        } else {
-          // Register card payment as informational movement (amount 0)
-          await tx.insert(cashMovementsTable).values({
-            sessionId,
-            type: "IN" as any,
-            amount: "0",
-            reason: `Venta #${sale.id} - Tarjeta ($${total})`,
-            userId,
-          });
-        }
-      }
-
-      return sale;
-    });
-
-    return result;
-  });
+  handle("sales:create", async (ctx, data: unknown) =>
+    createSale(ctx.user.id, data)
+  );
 
   handle("sales:getAll", async () => {
     return await db

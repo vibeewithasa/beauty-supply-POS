@@ -23,6 +23,7 @@ import {
   ShoppingCart,
 } from "lucide-react";
 import { toast } from "sonner";
+import { describeIpcError } from "@/lib/ipc-error";
 
 interface User {
   id: number;
@@ -142,13 +143,22 @@ export default function SalesPage() {
   };
 
   const addToCart = (product: Product) => {
+    // Visual guard only: the main process re-validates stock, price and total on every sale.
+    if (product.stock <= 0) {
+      toast.error(`"${product.name}" está agotado`);
+      return;
+    }
     const price =
       typeof product.price === "string"
         ? parseFloat(product.price)
         : product.price;
     const existingItem = cart.find((item) => item.productId === product.id);
     if (existingItem) {
-      const newQuantity = Math.min(existingItem.quantity + 1, product.stock);
+      if (existingItem.quantity + 1 > product.stock) {
+        toast.error(`Solo hay ${product.stock} unidades disponibles`);
+        return;
+      }
+      const newQuantity = existingItem.quantity + 1;
       setCart(
         cart.map((item) =>
           item.productId === product.id
@@ -253,7 +263,29 @@ export default function SalesPage() {
       setProducts(updatedProducts);
     } catch (error) {
       console.error("Sale error:", error);
-      toast.error("Error al completar la venta");
+      const { code, message } = describeIpcError(error, "Error al completar la venta");
+      toast.error(message);
+      setShowPaymentDialog(false);
+      try {
+        // Stale stock/prices/catalog or a closed cash register: resynchronize what the screen shows.
+        if (code && /^(STOCK_INSUFICIENTE|PRECIO_DESACTUALIZADO|SUBTOTAL_INCORRECTO|TOTAL_INCORRECTO|PRODUCTO_NO_DISPONIBLE|PRODUCTO_NO_ENCONTRADO)$/.test(code)) {
+          const fresh: Product[] = await window.api.products.getAll();
+          setProducts(fresh);
+          setCart((prev) =>
+            prev.flatMap((item) => {
+              const p = fresh.find((x) => x.id === item.productId);
+              if (!p || p.stock <= 0) return [];
+              const quantity = Math.min(item.quantity, p.stock);
+              const unitPrice = parseFloat(p.price);
+              return [{ ...item, quantity, unitPrice, subtotal: Math.round(quantity * unitPrice * 100) / 100 }];
+            })
+          );
+        } else if (code && code.startsWith("CAJA_")) {
+          setCashSession(await window.api.cash.getActiveSession());
+        }
+      } catch (refreshError) {
+        console.error("Refresh after rejected sale failed:", refreshError);
+      }
     }
   };
 
@@ -339,6 +371,7 @@ export default function SalesPage() {
                         <div className="flex justify-between items-center mt-1">
                           <span className="text-xs text-muted-foreground">
                             {product.sku}
+                            {product.stock <= 0 ? " · Agotado" : ""}
                           </span>
                           <span className="text-sm font-bold text-primary">
                             $

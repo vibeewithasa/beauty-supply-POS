@@ -20,11 +20,13 @@
     "db:check": "drizzle-kit check",
     "db:migrate": "node ./scripts/migrate.mjs",
     "seed:admin": "node ./scripts/seed-admin.mjs",
+    "db:precheck": "node ./scripts/precheck-integrity.mjs",
     "test:unit": "node --experimental-strip-types --test \"e2e/unit/*.test.mjs\"",
     "test:security": "node e2e/run.mjs security",
     "test:e2e": "node e2e/run.mjs ui",
     "test:integration": "node e2e/run.mjs integration",
-    "test:all": "npm run test:unit && node e2e/run.mjs all"
+    "test:migrations": "node e2e/migrations.mjs",
+    "test:all": "npm run test:unit && node e2e/run.mjs all && node e2e/migrations.mjs"
   },
   "build": {
     "appId": "com.beauty.pos",

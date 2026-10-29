@@ -106,7 +106,7 @@ export async function run(c) {
     await ui.nav(page, "Caja");
     const expected = await ui.closeCash(page);
     const s = await one("select * from cash_sessions where id=$1", [sess]);
-    expect(money(expected) === 596 && s.closed_at && s.closed_by === admin.id && money(s.final_amount) === 596, "closed row " + JSON.stringify({ expected, final: s.final_amount }));
+    expect(money(expected) === 596 && s.status === "closed" && s.closed_at && s.closed_by === admin.id && money(s.final_amount) === 596, "closed row " + JSON.stringify({ expected, final: s.final_amount }));
     await shot("cash_closed");
   });
   await test("F2.sales_screen_shows_closed_cash", "e2e", async () => {

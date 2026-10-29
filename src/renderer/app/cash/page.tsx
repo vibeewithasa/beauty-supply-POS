@@ -14,6 +14,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, Minus, X } from "lucide-react";
 import { toast } from "sonner";
+import { describeIpcError } from "@/lib/ipc-error";
 
 interface User {
   id: number;
@@ -132,7 +133,9 @@ export default function CashPage() {
       toast.success("Caja abierta exitosamente");
     } catch (error) {
       console.error("Error opening cash:", error);
-      toast.error("Error al abrir caja");
+      const { code, message } = describeIpcError(error, "Error al abrir caja");
+      toast.error(message);
+      if (code === "CAJA_YA_ABIERTA") await loadData();
     }
   };
 
@@ -171,7 +174,13 @@ export default function CashPage() {
       );
     } catch (error) {
       console.error("Error adding movement:", error);
-      toast.error("Error al registrar movimiento");
+      const { code, message } = describeIpcError(error, "Error al registrar movimiento");
+      toast.error(message);
+      if (code === "CAJA_CERRADA") {
+        setSession(null);
+        setMovements([]);
+        setShowMovementDialog(false);
+      }
     }
   };
 
@@ -193,7 +202,13 @@ export default function CashPage() {
       toast.success(`Caja cerrada. Diferencia: $${difference.toFixed(2)}`);
     } catch (error) {
       console.error("Error closing cash:", error);
-      toast.error("Error al cerrar caja");
+      const { code, message } = describeIpcError(error, "Error al cerrar caja");
+      toast.error(message);
+      if (code === "CAJA_CERRADA") {
+        setSession(null);
+        setMovements([]);
+        setShowCloseDialog(false);
+      }
     }
   };
 
