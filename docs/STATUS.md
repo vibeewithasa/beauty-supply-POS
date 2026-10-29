@@ -10,11 +10,12 @@ describes the early MVP and is intentionally not edited here.
 | Login by PIN, roles (admin/vendor), sessions owned by the Electron main process, revocation, brute-force limiter | implemented and tested |
 | Sales (cash / card) priced and totalled in the main process, stock-safe under concurrency | implemented and tested |
 | Cash register: one shared register, open/close, income/withdrawal without overdraft, status coherent | implemented and tested |
-| Catalog admin: create/update product, inventory movements (signed deltas), audited price changes, logical delete | **backend** implemented and tested; **no screens** yet (inventory/receive/price pages are placeholders) |
-| Returns: validated against the sale, no over-return, restock, refund recorded as `pending` | **backend** implemented and tested; **no screen** yet (the returns page is a placeholder) |
+| Catalog admin: create/update product, inventory movements (signed deltas), audited price changes, logical delete | implemented and tested, with screens: **Productos** (`/inventory`: list/search, create with initial price+stock, edit, price change with history, logical delete) and **Recepción** (`/receive`: IN/OUT/ADJUST with reason and history) |
+| Returns: validated against the sale, no over-return, restock, refund recorded as `pending` | implemented and tested, with screen (`/returns`: sale lookup, returned/remaining quantities, amount preview, confirmation, history). Shown as **PENDIENTE DE REEMBOLSO**; no button settles it |
 | Users: create/update/deactivate, unique PIN, last-admin protection | implemented and tested (existing users page) |
 | Dashboard: sales, cash, pending vs paid refunds | implemented; figures shown as-is |
-| Reports, receipt/ticket printing, thermal printers, backups, settings | **not implemented** |
+| Reports (`/reports`, admin): gross sales, by payment method, top products, returns by refund status, local CSV export; dates validated in main (max 366 days). No profit/cost/tax figures (not recorded) | implemented and tested |
+| Receipt/ticket printing, thermal printers, backups, settings | **not implemented** |
 | Packaged installer / auto-update | **not production ready** (see below) |
 
 ## Contracts worth knowing
@@ -25,6 +26,8 @@ describes the early MVP and is intentionally not edited here.
 - `returns:create`: amounts come from the sale; a client `unitPrice`/`productId` is only a claim. The refund
   starts as `pending`; **the cash register is not touched and nothing marks a refund as paid** (no settlement
   operation exists yet). Deleted products are not restocked (no recovery policy).
+- Read channels added for the screens: `products:listAdmin` (admin, includes inactive/deleted), `returns:getSaleForReturn`
+  (authenticated, informational: `returns:create` re-validates under locks), `reports:getSummary` (admin).
 - Unexpected errors reach the UI only as `[ERROR_INTERNO]`; details go to the main-process log, redacted.
 
 ## Decisions still pending (product)
@@ -65,7 +68,7 @@ describes the early MVP and is intentionally not edited here.
 
 ## Requirements before distributing to a real store
 
-1. Replace the PIN storage (above). 2. Fix the packaged renderer and the configuration/installer path.
-3. Build the missing screens that make the backend usable (product/inventory/price management, returns).
+1. (done) PIN storage is salted scrypt. 2. Fix the packaged renderer and the configuration/installer path.
+3. (done) Screens for product/inventory/price management, returns and reports.
 4. Decide the pending product questions. 5. Dependency upgrade + audit. 6. Backup/restore procedure.
 7. Electron shell hardening and code signing/updater.

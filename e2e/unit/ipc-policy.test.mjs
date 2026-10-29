@@ -19,12 +19,12 @@ const used = [...preload.matchAll(/invoke\("([\w:]+)"/g)].map((m) => m[1]);
 
 test("every handler registered in ipc.ts has a policy and vice versa", () => {
   assert.deepEqual([...handled].sort(), Object.keys(policy).sort());
-  assert.equal(handled.length, 26);
+  assert.equal(handled.length, 29);
 });
-test("admin-only channels are exactly the expected 14", () => {
+test("admin-only channels are exactly the expected 16", () => {
   const admin = Object.entries(policy).filter(([, v]) => v === "admin").map(([k]) => k);
-  assert.equal(admin.length, 14);
-  for (const ch of admin) assert.match(ch, /^(products:(create|update|softDelete)|users:|inventory:|priceChanges:|reports:|dashboard:)/);
+  assert.equal(admin.length, 16);
+  for (const ch of admin) assert.match(ch, /^(products:(create|update|softDelete|listAdmin)|users:|inventory:|priceChanges:|reports:|dashboard:)/);
 });
 test("the only public channels are auth:login/me/logout and every registration goes through an error-guarded wrapper", () => {
   assert.deepEqual([...publicCh].sort(), ["auth:login", "auth:logout", "auth:me"]);

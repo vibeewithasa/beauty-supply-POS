@@ -50,15 +50,18 @@ const CALLS = {
   "reports:getSalesByDateRange": "api.reports.getSalesByDateRange('2020-01-01','2035-01-01')",
   "reports:getDeletedProducts": "api.reports.getDeletedProducts()",
   "dashboard:getStats": "api.dashboard.getStats()",
+  "products:listAdmin": "api.products.listAdmin()",
+  "returns:getSaleForReturn": "api.returns.getSaleForReturn(999999)",
+  "reports:getSummary": "api.reports.getSummary({from:'2026-01-01',to:'2026-01-02'})",
 };
 const ADMIN_ONLY = [
   "products:create", "products:update", "products:softDelete", "users:getAll", "users:create", "users:update",
   "users:delete", "inventory:getMovements", "inventory:addMovement", "priceChanges:create", "priceChanges:getAll",
-  "reports:getSalesByDateRange", "reports:getDeletedProducts", "dashboard:getStats",
+  "reports:getSalesByDateRange", "reports:getDeletedProducts", "dashboard:getStats", "products:listAdmin", "reports:getSummary",
 ];
 const VENDOR_READS = [
   "products:getAll", "products:findBySkuOrBarcode", "cash:getActiveSession", "cash:getMovements", "sales:getAll",
-  "sales:getById", "returns:getAll",
+  "sales:getById", "returns:getAll", "returns:getSaleForReturn",
 ];
 
 export async function run(c) {
@@ -84,7 +87,7 @@ export async function run(c) {
   await test("A2.public_me_without_session_is_null", "security", async () => {
     expect((await me()) === null, "me() must be null before login");
   });
-  await test("A3.all_26_protected_channels_rejected_without_session", "security", async () => {
+  await test("A3.all_29_protected_channels_rejected_without_session", "security", async () => {
     const before = await userCount();
     const leaks = [];
     for (const [ch, expr] of Object.entries(CALLS)) { const r = await ipc(page, expr); if (!unauthenticated(r)) leaks.push(`${ch}:${r.ok ? "ALLOWED" : r.err}`); }
@@ -102,10 +105,11 @@ export async function run(c) {
   });
   await test("B2.vendor_allowed_operations_work", "security", async () => {
     const bad = [];
-    for (const ch of VENDOR_READS) { const r = await ipc(page, CALLS[ch]); if (!r.ok) bad.push(ch + ":" + r.err); }
+    // returns:getSaleForReturn(999999) reaches its handler and answers a business error (the sale does not exist)
+    for (const ch of VENDOR_READS) { const r = await ipc(page, CALLS[ch]); if (!r.ok && !/[VENTA_NO_ENCONTRADA]/.test(r.err)) bad.push(ch + ":" + r.err); }
     expect(bad.length === 0, bad.join(" | "));
   });
-  await test("B3.vendor_rejected_on_all_14_admin_channels", "security", async () => {
+  await test("B3.vendor_rejected_on_all_16_admin_channels", "security", async () => {
     const before = await userCount();
     const leaks = [];
     for (const ch of ADMIN_ONLY) { const r = await ipc(page, CALLS[ch]); if (!forbidden(r)) leaks.push(`${ch}:${r.ok ? "ALLOWED" : r.err}`); }

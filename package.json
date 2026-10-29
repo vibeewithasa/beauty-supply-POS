@@ -29,6 +29,7 @@
     "test:returns": "node e2e/run.mjs returns",
     "test:hardening": "node e2e/run.mjs hardening",
     "test:pin": "node e2e/run.mjs pin",
+    "test:screens": "node e2e/run.mjs screens",
     "test:migrations": "node e2e/migrations.mjs",
     "test:all": "npm run test:unit && node e2e/run.mjs all && node e2e/migrations.mjs"
   },

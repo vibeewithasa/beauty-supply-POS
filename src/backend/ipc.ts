@@ -6,15 +6,22 @@ import {
   saleItems as saleItemsTable,
   cashSessions as cashSessionsTable,
   cashMovements as cashMovementsTable,
-  inventoryMovements as inventoryMovementsTable,
   returns as returnsTable,
   deletedProductsLog as deletedProductsLogTable,
-  priceChanges as priceChangesTable,
 } from "./schema";
 import { eq, or, and, desc, sql, gte, lte, isNull } from "drizzle-orm";
 import { registerAuthHandlers, secureHandle } from "./auth";
 import { createUser, deactivateUser, listActiveUsers, updateUser } from "./users-service";
 import { createReturn } from "./returns-service";
+import {
+  getSaleForReturn,
+  listAllProducts,
+  listMovements,
+  listPriceChanges,
+  listReturns,
+  salesByRange,
+  salesSummary,
+} from "./read-service";
 import {
   addInventoryMovement,
   createPriceChange,
@@ -34,6 +41,7 @@ import type { Access, IpcContext } from "./auth";
 // be registered (deny by default). Public channels (auth:*) live in auth.ts.
 const ACCESS: Record<string, Access> = {
   "products:getAll": "authenticated",
+  "products:listAdmin": "admin",
   "products:findBySkuOrBarcode": "authenticated",
   "products:create": "admin",
   "products:update": "admin",
@@ -50,6 +58,7 @@ const ACCESS: Record<string, Access> = {
   "sales:getById": "authenticated",
   "returns:create": "authenticated",
   "returns:getAll": "authenticated",
+  "returns:getSaleForReturn": "authenticated",
   "users:getAll": "admin",
   "users:create": "admin",
   "users:update": "admin",
@@ -60,6 +69,7 @@ const ACCESS: Record<string, Access> = {
   "priceChanges:getAll": "admin",
   "reports:getSalesByDateRange": "admin",
   "reports:getDeletedProducts": "admin",
+  "reports:getSummary": "admin",
   "dashboard:getStats": "admin",
 };
 
@@ -83,6 +93,9 @@ export function registerIpcHandlers() {
       .where(eq(productsTable.status, "active"))
       .orderBy(productsTable.name);
   });
+
+  // administrators only: inactive and logically deleted products too (sellers keep seeing active ones only)
+  handle("products:listAdmin", async () => listAllProducts());
 
   handle("products:findBySkuOrBarcode", async (ctx, q: string) => {
     const rows = await db
@@ -194,13 +207,10 @@ export function registerIpcHandlers() {
     createReturn(ctx.user.id, data)
   );
 
-  handle("returns:getAll", async () => {
-    return await db
-      .select()
-      .from(returnsTable)
-      .orderBy(desc(returnsTable.createdAt))
-      .limit(100);
-  });
+  handle("returns:getAll", async () => listReturns());
+
+  // read-only lookup for the returns screen: sale lines, already returned and still returnable quantities
+  handle("returns:getSaleForReturn", async (_ctx, saleId: unknown) => getSaleForReturn(saleId));
 
   // ============= USERS =============
   // active users only: "deleted" users are deactivated (their history is kept) and no longer listed
@@ -216,36 +226,7 @@ export function registerIpcHandlers() {
   handle("users:delete", async (ctx, id: unknown) => deactivateUser(ctx.user.id, id));
 
   // ============= INVENTORY =============
-  handle("inventory:getMovements", async (ctx, productId?: number) => {
-    const query = db
-      .select({
-        id: inventoryMovementsTable.id,
-        productId: inventoryMovementsTable.productId,
-        type: inventoryMovementsTable.type,
-        amount: inventoryMovementsTable.amount,
-        reason: inventoryMovementsTable.reason,
-        createdAt: inventoryMovementsTable.createdAt,
-        userName: usersTable.name,
-        productName: productsTable.name,
-        productSku: productsTable.sku,
-      })
-      .from(inventoryMovementsTable)
-      .leftJoin(usersTable, eq(inventoryMovementsTable.userId, usersTable.id))
-      .leftJoin(
-        productsTable,
-        eq(inventoryMovementsTable.productId, productsTable.id)
-      )
-      .orderBy(desc(inventoryMovementsTable.createdAt))
-      .limit(100);
-
-    if (productId) {
-      return await query.where(
-        eq(inventoryMovementsTable.productId, productId)
-      );
-    }
-
-    return await query;
-  });
+  handle("inventory:getMovements", async (_ctx, productId?: unknown) => listMovements(productId));
 
   handle("inventory:addMovement", async (ctx, data: unknown) =>
     addInventoryMovement(ctx.user.id, data)
@@ -256,45 +237,15 @@ export function registerIpcHandlers() {
     createPriceChange(ctx.user.id, data)
   );
 
-  handle("priceChanges:getAll", async () => {
-    return await db
-      .select({
-        id: priceChangesTable.id,
-        productId: priceChangesTable.productId,
-        oldPrice: priceChangesTable.oldPrice,
-        newPrice: priceChangesTable.newPrice,
-        reason: priceChangesTable.reason,
-        createdAt: priceChangesTable.createdAt,
-        userName: usersTable.name,
-        productName: productsTable.name,
-        productSku: productsTable.sku,
-      })
-      .from(priceChangesTable)
-      .leftJoin(usersTable, eq(priceChangesTable.changedBy, usersTable.id))
-      .leftJoin(
-        productsTable,
-        eq(priceChangesTable.productId, productsTable.id)
-      )
-      .orderBy(desc(priceChangesTable.createdAt))
-      .limit(100);
-  });
+  handle("priceChanges:getAll", async (_ctx, productId?: unknown) => listPriceChanges(productId));
 
   // ============= REPORTS =============
-  handle(
-    "reports:getSalesByDateRange",
-    async (_ctx, startDate: string, endDate: string) => {
-      return await db
-        .select()
-        .from(salesTable)
-        .where(
-          and(
-            gte(salesTable.createdAt, new Date(startDate)),
-            lte(salesTable.createdAt, new Date(endDate))
-          )
-        )
-        .orderBy(desc(salesTable.createdAt));
-    }
+  handle("reports:getSalesByDateRange", async (_ctx, startDate: unknown, endDate: unknown) =>
+    salesByRange(startDate, endDate)
   );
+
+  // real aggregated figures for the reports screen (dates validated in main)
+  handle("reports:getSummary", async (_ctx, range: unknown) => salesSummary(range));
 
   handle("reports:getDeletedProducts", async () => {
     return await db

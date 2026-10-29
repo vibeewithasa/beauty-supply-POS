@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld("api", {
   },
   products: {
     getAll: () => invoke("products:getAll"),
+    listAdmin: () => invoke("products:listAdmin"),
     findBySkuOrBarcode: (q: string) =>
       invoke("products:findBySkuOrBarcode", q),
     create: (data: any) => invoke("products:create", data),
@@ -47,6 +48,7 @@ contextBridge.exposeInMainWorld("api", {
   returns: {
     create: (data: any) => invoke("returns:create", data),
     getAll: () => invoke("returns:getAll"),
+    getSaleForReturn: (saleId: number) => invoke("returns:getSaleForReturn", saleId),
   },
   users: {
     getAll: () => invoke("users:getAll"),
@@ -63,12 +65,13 @@ contextBridge.exposeInMainWorld("api", {
   },
   priceChanges: {
     create: (data: any) => invoke("priceChanges:create", data),
-    getAll: () => invoke("priceChanges:getAll"),
+    getAll: (productId?: number) => invoke("priceChanges:getAll", productId),
   },
   reports: {
     getSalesByDateRange: (startDate: string, endDate: string) =>
       invoke("reports:getSalesByDateRange", startDate, endDate),
     getDeletedProducts: () => invoke("reports:getDeletedProducts"),
+    getSummary: (range: { from: string; to: string }) => invoke("reports:getSummary", range),
   },
   dashboard: {
     getStats: () => invoke("dashboard:getStats"),

@@ -18,6 +18,7 @@ declare global {
       };
       products: {
         getAll(): Promise<any[]>;
+        listAdmin(): Promise<any[]>;
         findBySkuOrBarcode(q: string): Promise<any | null>;
         create(data: any): Promise<any>;
         update(id: number, data: any): Promise<any>;
@@ -38,6 +39,7 @@ declare global {
       returns: {
         create(data: any): Promise<any>;
         getAll(): Promise<any[]>;
+        getSaleForReturn(saleId: number): Promise<any>;
       };
       users: {
         getAll(): Promise<any[]>;
@@ -51,11 +53,12 @@ declare global {
       };
       priceChanges: {
         create(data: any): Promise<boolean>;
-        getAll(): Promise<any[]>;
+        getAll(productId?: number): Promise<any[]>;
       };
       reports: {
         getSalesByDateRange(startDate: string, endDate: string): Promise<any[]>;
         getDeletedProducts(): Promise<any[]>;
+        getSummary(range: { from: string; to: string }): Promise<any>;
       };
       dashboard: {
         getStats(): Promise<any>;

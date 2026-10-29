@@ -11,6 +11,8 @@ import {
   Eye,
   BarChart3,
   Users,
+  Package,
+  FileText,
 } from "lucide-react";
 
 interface User {
@@ -57,10 +59,12 @@ export function POSNavbar() {
   const adminLinks = [
     { href: "/cash", icon: DollarSign, label: "Caja" },
     { href: "/sales", icon: ShoppingCart, label: "Vender" },
-    { href: "/receive", icon: Plus, label: "Inventario" },
+    { href: "/inventory", icon: Package, label: "Productos" },
+    { href: "/receive", icon: Plus, label: "Recepción" },
     { href: "/returns", icon: RotateCcw, label: "Devoluciones" },
     { href: "/stock", icon: Eye, label: "Ver Stock" },
     { href: "/dashboard", icon: BarChart3, label: "Dashboard" },
+    { href: "/reports", icon: FileText, label: "Reportes" },
     { href: "/users", icon: Users, label: "Usuarios" },
   ];
 
