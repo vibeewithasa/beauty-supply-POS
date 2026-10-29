@@ -25,8 +25,12 @@ const CHECKS = [
   ["cash_movements with negative amount", "BLOCKER", "select count(*)::int n from cash_movements where amount < 0"],
   ["cash_sessions with negative initial/current/final amount", "BLOCKER", "select count(*)::int n from cash_sessions where initial_amount < 0 or current_amount < 0 or final_amount < 0"],
   ["more than one cash session without closed_at (unique open session)", "BLOCKER", "select greatest(count(*) - 1, 0)::int n from cash_sessions where closed_at is null"],
-  ["cash sessions with closed_at but missing closed_by/final_amount", "BLOCKER", "select count(*)::int n from cash_sessions where closed_at is not null and (closed_by is null or final_amount is null)"],
-  ["cash sessions without closed_at but with closed_by/final_amount", "BLOCKER", "select count(*)::int n from cash_sessions where closed_at is null and (closed_by is not null or final_amount is not null)"],
+  // cash_sessions_state_coherent, case by case. 'effective' status = what the migration's reconciliation
+  // UPDATE leaves behind (closed_at set + status 'open' becomes 'closed'); the rest must already be coherent.
+  ["cash sessions with status 'closed' but no closed_at (not reconcilable)", "BLOCKER", "select count(*)::int n from cash_sessions where status = 'closed' and closed_at is null"],
+  ["cash sessions closed (closed_at set) but missing closed_by or final_amount", "BLOCKER", "select count(*)::int n from cash_sessions where closed_at is not null and (closed_by is null or final_amount is null)"],
+  ["cash sessions open (no closed_at) but carrying closed_by or final_amount", "BLOCKER", "select count(*)::int n from cash_sessions where closed_at is null and status = 'open' and (closed_by is not null or final_amount is not null)"],
+  ["cash sessions that would violate cash_sessions_state_coherent after reconciliation (mirror of the SQL constraint)", "BLOCKER", "select count(*)::int n from cash_sessions where not (((case when closed_at is not null and status = 'open' then 'closed' else status::text end) = 'open' and closed_at is null and closed_by is null and final_amount is null) or ((case when closed_at is not null and status = 'open' then 'closed' else status::text end) = 'closed' and closed_at is not null and closed_by is not null and final_amount is not null))"],
   ["sale_items -> sales orphans", "BLOCKER", "select count(*)::int n from sale_items x left join sales s on s.id = x.sale_id where s.id is null"],
   ["sale_items -> products orphans", "BLOCKER", "select count(*)::int n from sale_items x left join products p on p.id = x.product_id where p.id is null"],
   ["sales -> cash_sessions orphans", "BLOCKER", "select count(*)::int n from sales x left join cash_sessions c on c.id = x.cash_session_id where x.cash_session_id is not null and c.id is null"],

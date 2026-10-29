@@ -1,4 +1,4 @@
-// Usage: node e2e/run.mjs [security|ui|integration|all]   (default: all)
+// Usage: node e2e/run.mjs [security|ui|integration|catalog|all]   (default: all)
 // Artifacts (logs, screenshots, results.json) go to e2e-artifacts/<run>/ which is git-ignored.
 // Exit codes: 0 ok | 1 failure or fatal error | 2 bad usage | 3 a KNOWN_FAIL started passing (UNEXPECTED_PASS).
 import path from "node:path";
@@ -9,11 +9,11 @@ import {
   makeData, createRecorder, summarize, scrub, sleep,
 } from "./lib/harness.mjs";
 
-const SUITES = { security: "./suites/security.mjs", ui: "./suites/ui.mjs", integration: "./suites/integration.mjs" };
+const SUITES = { security: "./suites/security.mjs", ui: "./suites/ui.mjs", integration: "./suites/integration.mjs", catalog: "./suites/catalog.mjs" };
 const arg = process.argv[2] || "all";
-const selected = arg === "all" ? ["security", "ui", "integration"] : [arg];
+const selected = arg === "all" ? ["security", "ui", "integration", "catalog"] : [arg];
 if (!selected.every((s) => SUITES[s])) {
-  console.error("Unknown suite. Use: security | ui | integration | all");
+  console.error("Unknown suite. Use: security | ui | integration | catalog | all");
   process.exit(2);
 }
 

@@ -377,13 +377,13 @@ export async function run(c) {
     const before = await snap();
     // out-of-scope handlers still lack validation, but the database invariant (deleted => stock 0) holds for them
     const inv = await ipc(page, `api.inventory.addMovement({productId:${p.id},type:'IN',amount:5,reason:'e2e'})`);
-    expect(inv.ok === false, "inventory:addMovement must not give a deleted product stock");
+    expect(biz(inv, "PRODUCTO_ELIMINADO"), "inventory:addMovement must not give a deleted product stock: " + JSON.stringify(inv));
     expect((await one("select stock from products where id=$1", [p.id])).stock === 0, "stock stays 0");
     expect((await snap()) === before, "the failed inventory movement left no orphan row (rolled back)");
     const p2 = await data.product("D4B", "5.00", 0);
     expect((await ipc(page, `api.products.softDelete(${p2.id},'e2e')`)).ok, "delete second");
-    const upd = await ipc(page, `api.products.update(${p2.id},{stock:3})`);
-    expect(upd.ok === false, "products:update is blocked for deleted products");
+    const upd = await ipc(page, `api.products.update(${p2.id},{name:'x'})`);
+    expect(biz(upd, "PRODUCTO_ELIMINADO"), "products:update is blocked for deleted products: " + JSON.stringify(upd));
   });
   await t("SOFTDEL-03.soft_delete_guards_and_deleted_products_cannot_be_resurrected", "integration", async () => {
     expect(biz(await ipc(page, "api.products.softDelete(987654321,'x')"), "PRODUCTO_NO_ENCONTRADO"), "nonexistent");
@@ -393,7 +393,7 @@ export async function run(c) {
     expect(biz(await ipc(page, `api.products.update(${p.id},{status:'deleted'})`), "OPERACION_INVALIDA"), "update cannot delete");
     expect((await ipc(page, `api.products.softDelete(${p.id},'ok')`)).ok, "delete (stock 0: no movement)");
     expect((await one("select count(*)::int n from inventory_movements where product_id=$1", [p.id])).n === 0, "no movement for stock 0");
-    expect(biz(await ipc(page, `api.products.update(${p.id},{status:'active',price:'1.00'})`), "PRODUCTO_ELIMINADO"), "deleted product cannot be edited/reactivated");
+    expect(biz(await ipc(page, `api.products.update(${p.id},{status:'active',name:'back'})`), "PRODUCTO_ELIMINADO"), "deleted product cannot be edited/reactivated");
     expect((await one("select status from products where id=$1", [p.id])).status === "deleted", "still deleted");
   });
 

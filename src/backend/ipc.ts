@@ -14,7 +14,12 @@ import {
 } from "./schema";
 import { eq, or, and, desc, sql, gte, lte, isNull } from "drizzle-orm";
 import { hashPin, registerAuthHandlers, secureHandle } from "./auth";
-import { BusinessError } from "./errors";
+import {
+  addInventoryMovement,
+  createPriceChange,
+  createProduct,
+  updateProduct,
+} from "./catalog-service";
 import {
   addCashMovement,
   closeCashSession,
@@ -96,42 +101,13 @@ export function registerIpcHandlers() {
     return rows[0] ?? null;
   });
 
-  handle("products:create", async (ctx, data: any) => {
-    const processedData = {
-      ...data,
-      price:
-        typeof data.price === "string" ? data.price : data.price?.toString(),
-    };
-    const [product] = await db
-      .insert(productsTable)
-      .values(processedData)
-      .returning();
-    return product;
-  });
+  handle("products:create", async (ctx, data: unknown) =>
+    createProduct(ctx.user.id, data)
+  );
 
-  handle("products:update", async (ctx, id: number, data: any) => {
-    // Deletion has its own audited path; a deleted product can neither be edited nor resurrected here.
-    if (data?.status === "deleted") {
-      throw new BusinessError("OPERACION_INVALIDA", "Usa la eliminación lógica para eliminar productos");
-    }
-    const [current] = await db.select({ status: productsTable.status }).from(productsTable).where(eq(productsTable.id, id));
-    if (current?.status === "deleted") {
-      throw new BusinessError("PRODUCTO_ELIMINADO", "El producto está eliminado y no puede modificarse");
-    }
-    const processedData = {
-      ...data,
-      ...(data.price && {
-        price:
-          typeof data.price === "string" ? data.price : data.price.toString(),
-      }),
-    };
-    const [product] = await db
-      .update(productsTable)
-      .set({ ...processedData, updatedAt: new Date() })
-      .where(eq(productsTable.id, id))
-      .returning();
-    return product;
-  });
+  handle("products:update", async (_ctx, id: unknown, data: unknown) =>
+    updateProduct(id, data)
+  );
 
   handle("products:softDelete", async (ctx, id: unknown, reason: unknown) =>
     softDeleteProduct(ctx.user.id, id, reason)
@@ -369,51 +345,14 @@ export function registerIpcHandlers() {
     return await query;
   });
 
-  handle("inventory:addMovement", async (ctx, data: any) => {
-    const { productId, type, amount, reason } = data;
-    const userId = ctx.user.id;
-
-    await db.transaction(async (tx) => {
-      await tx.insert(inventoryMovementsTable).values({
-        productId,
-        type,
-        amount,
-        reason,
-        userId,
-      });
-
-      // Update stock
-      await tx
-        .update(productsTable)
-        .set({ stock: sql`${productsTable.stock} + ${amount}` })
-        .where(eq(productsTable.id, productId));
-    });
-
-    return true;
-  });
+  handle("inventory:addMovement", async (ctx, data: unknown) =>
+    addInventoryMovement(ctx.user.id, data)
+  );
 
   // ============= PRICE CHANGES =============
-  handle("priceChanges:create", async (ctx, data: any) => {
-    const { productId, oldPrice, newPrice, reason } = data;
-    const userId = ctx.user.id;
-
-    await db.transaction(async (tx) => {
-      await tx.insert(priceChangesTable).values({
-        productId,
-        oldPrice: oldPrice.toString(),
-        newPrice: newPrice.toString(),
-        reason,
-        changedBy: userId,
-      });
-
-      await tx
-        .update(productsTable)
-        .set({ price: newPrice.toString(), updatedAt: new Date() })
-        .where(eq(productsTable.id, productId));
-    });
-
-    return true;
-  });
+  handle("priceChanges:create", async (ctx, data: unknown) =>
+    createPriceChange(ctx.user.id, data)
+  );
 
   handle("priceChanges:getAll", async () => {
     return await db

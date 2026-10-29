@@ -8,6 +8,7 @@
 import path from "node:path";
 import fs from "node:fs";
 import crypto from "node:crypto";
+import os from "node:os";
 import { spawnSync } from "node:child_process";
 import pg from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -25,9 +26,19 @@ const { results, rec, test, skip } = createRecorder("migrations", path.join(ROOT
 
 const dbs = [];
 async function newDb() { const n = await createRunDb(); dbs.push(n); return n; }
-async function applyMigrations(name) {
+async function applyMigrations(name, folder = MIGRATIONS) {
   const pool = new pg.Pool({ connectionString: urlFor(name, "e2e_migrator"), max: 1 });
-  try { await migrate(drizzle(pool), { migrationsFolder: MIGRATIONS }); } finally { await pool.end(); }
+  try { await migrate(drizzle(pool), { migrationsFolder: folder }); } finally { await pool.end(); }
+}
+// A migrations folder holding only the 4 historical migrations: reproduces the pre-0004 schema without any dump.
+function makePre4Folder() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "e2e-pre4-"));
+  fs.mkdirSync(path.join(dir, "meta"));
+  const journal = JSON.parse(fs.readFileSync(path.join(MIGRATIONS, "meta/_journal.json"), "utf8"));
+  journal.entries = journal.entries.slice(0, 4);
+  fs.writeFileSync(path.join(dir, "meta/_journal.json"), JSON.stringify(journal));
+  for (const e of journal.entries) fs.copyFileSync(path.join(MIGRATIONS, e.tag + ".sql"), path.join(dir, e.tag + ".sql"));
+  return dir;
 }
 function restoreDump(name) {
   const u = new URL(urlFor(name));
@@ -176,6 +187,49 @@ try {
     });
     await bdb.end();
   }
+
+  // ------------------------------------------------------------ 3b. precheck vs the real constraint, state by state
+  // For every combination: build a pre-0004 database, insert one session, run the precheck, then really apply 0004.
+  // The precheck verdict must match the migration outcome, and the precheck must not write anything.
+  const pre4 = makePre4Folder();
+  const SCENARIOS = [
+    ["open_coherent", "'open', null, null, null", true],
+    ["closed_coherent", "'closed', now(), 1, '5'", true],
+    ["legacy_closed_with_old_open_status_is_reconcilable", "'open', now(), 1, '5'", true],
+    ["closed_without_date", "'closed', null, null, null", false],
+    ["closed_without_date_but_with_closer_and_amount", "'closed', null, 1, '5'", false],
+    ["open_with_closing_data", "'open', null, 1, '5'", false],
+    ["open_with_only_closer", "'open', null, 1, null", false],
+    ["closed_incomplete_no_closer_no_amount", "'closed', now(), null, null", false],
+    ["closed_missing_only_amount", "'closed', now(), 1, null", false],
+    ["legacy_old_open_status_but_incomplete", "'open', now(), null, null", false],
+  ];
+  let n = 0;
+  for (const [label, values, compatible] of SCENARIOS) {
+    await test(`MIG-06.${String(++n).padStart(2, "0")}_precheck_matches_constraint::${label}`, "migration", async () => {
+      const name = await newDb();
+      await applyMigrations(name, pre4);
+      const db = await connectRunDb(name);
+      try {
+        await db.query(`insert into cash_sessions(opened_by, initial_amount, current_amount, status, closed_at, closed_by, final_amount) values (1, '10', '10', ${values})`);
+        const before = await fingerprint(db);
+        const pre = precheck(name);
+        expect((await fingerprint(db)) === before, "the precheck wrote something");
+        expect(pre.code === (compatible ? 0 : 1), `precheck exit ${pre.code}, expected ${compatible ? 0 : 1}:\n${pre.out}`);
+        let applied = true;
+        try { await applyMigrations(name); } catch { applied = false; }
+        expect(applied === compatible, `the migration ${applied ? "applied" : "failed"} but the precheck said ${compatible ? "compatible" : "blocked"}`);
+        if (compatible) {
+          const row = await one(db, "select status, closed_at is not null as closed from cash_sessions");
+          expect((row.status === "closed") === row.closed, "state coherent after migrating");
+        } else {
+          expect((await one(db, "select count(*)::int n from drizzle.__drizzle_migrations")).n === 4, "failed migration left no trace");
+        }
+        return compatible ? "compatible: precheck exit 0 and 0004 applied" : "blocked: precheck exit 1 and 0004 rolled back";
+      } finally { await db.end(); }
+    });
+  }
+  fs.rmSync(pre4, { recursive: true, force: true });
 
   // ------------------------------------------------------------ 4. startup must abort when migrations fail
   await test("MIG-05.app_refuses_to_run_when_migrations_fail", "migration", async () => {
