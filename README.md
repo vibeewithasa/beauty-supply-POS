@@ -136,4 +136,4 @@ Key source directories:
 
 **Purpose:** Local POS software for beauty supply businesses  
 **Current stage:** Active development  
-**License:** No root `LICENSE` file is currently present. Confirm rights to the source code and third-party assets before selecting or applying a license.
+**License:** [MIT License](LICENSE) applies to code owned by the copyright holder. Third-party assets may have separate rights and are not automatically covered by this license.
