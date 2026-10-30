@@ -226,6 +226,16 @@ export async function run(c) {
     expect(problems.length === 0, problems.join(" | "));
   });
 
+  await test("UX-09.typing_the_whole_pin_and_enter_at_once_signs_in_(keyboard_wedge_speed)", "e2e", async () => {
+    // the last digit and Enter arrive within the same millisecond: the login must read the PIN from the keystrokes, not from a stale render
+    for (let i = 0; i < 3; i++) {
+      await ui.logout(page);
+      await page.getByText("Ingresa tu PIN para comenzar").waitFor();
+      await page.keyboard.type(vendor.pin, { delay: 0 });
+      await page.keyboard.press("Enter");
+      await page.waitForURL(/#\/sales$/, { timeout: 8000 });
+    }
+  });
   await test("UX-08.the_session_ends_with_the_register_closed", "e2e", async () => {
     await closeStrayCash(db, admin.id); // the register opened for the sales checks
   });

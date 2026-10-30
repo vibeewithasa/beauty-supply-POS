@@ -11,24 +11,32 @@ const MAX_PIN = 8;
 
 export default function LoginPage() {
   const [pin, setPin] = useState("");
+  // The PIN is also kept in a ref that is updated synchronously on every key: a fast typist or a keyboard-wedge reader sends
+  // the last digit and Enter within the same millisecond, before React has re-rendered with the state value.
+  const pinRef = useRef("");
+  const updatePin = (next: (current: string) => string) => {
+    pinRef.current = next(pinRef.current);
+    setPin(pinRef.current);
+  };
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
   const handlePinInput = (digit: string) => {
-    if (pin.length < MAX_PIN) {
-      setPin(pin + digit);
+    if (pinRef.current.length < MAX_PIN) {
+      updatePin((p) => p + digit);
       setError("");
     }
   };
 
   const handleBackspace = () => {
-    setPin(pin.slice(0, -1));
+    updatePin((p) => p.slice(0, -1));
     setError("");
   };
 
   const handleLogin = async () => {
     if (loading) return;
+    const pin = pinRef.current;
     if (pin.length < MIN_PIN) {
       setError("Ingresa tu PIN (mínimo 4 dígitos)");
       return;
@@ -45,7 +53,7 @@ export default function LoginPage() {
         navigate(user.role === "admin" ? "/dashboard" : "/sales");
       } else {
         setError("PIN incorrecto");
-        setPin("");
+        updatePin(() => "");
       }
     } catch (err) {
       console.error("Login error:", err);
@@ -53,7 +61,7 @@ export default function LoginPage() {
       const { code, message } = describeIpcError(err, "Error al iniciar sesión");
       const text = code === "LOGIN_BLOQUEADO" ? message : "Error al iniciar sesión";
       setError(text);
-      setPin("");
+      updatePin(() => "");
       toast.error(text);
     } finally {
       setLoading(false);
@@ -61,7 +69,7 @@ export default function LoginPage() {
   };
 
   const handleClear = () => {
-    setPin("");
+    updatePin(() => "");
     setError("");
   };
 
@@ -72,13 +80,13 @@ export default function LoginPage() {
     const onKey = (e: KeyboardEvent) => {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       if (/^\d$/.test(e.key)) {
-        setPin((p) => (p.length < MAX_PIN ? p + e.key : p));
+        if (pinRef.current.length < MAX_PIN) updatePin((p) => p + e.key);
         setError("");
       } else if (e.key === "Backspace") {
-        setPin((p) => p.slice(0, -1));
+        updatePin((p) => p.slice(0, -1));
         setError("");
       } else if (e.key === "Escape") {
-        setPin("");
+        updatePin(() => "");
         setError("");
       } else if (e.key === "Enter") {
         e.preventDefault(); // also stops a focused keypad button from being "clicked" by Enter

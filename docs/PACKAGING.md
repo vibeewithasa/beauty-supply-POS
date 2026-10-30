@@ -43,13 +43,15 @@ Rules and risks:
 * The host must be loopback (`localhost`, `127.0.0.1`, `::1`). A LAN server requires an explicit `POS_ALLOW_REMOTE_DB=1`.
   Never expose PostgreSQL to the internet.
 * `config.json` stores the password in plain text, readable by that Windows user (and administrators). Use a dedicated
-  PostgreSQL role with only the privileges the app needs (it runs migrations, so it needs DDL on its own database), a
-  strong unique password, and restrict the folder to the store's Windows account. Do not reuse a shared password.
+  PostgreSQL role with only data privileges (`npm run db:roles`, see `docs/OPERATIONS.md`: the app no longer migrates, so its runtime
+  login needs no DDL), a strong unique password, and restrict the folder to the store's Windows account. Do not reuse a shared password.
 * Without a valid configuration the app shows a "configuration missing" window, registers no IPC handler and runs no query.
 * The connection string and password are redacted from logs and from errors that reach the renderer.
 
-First run: create the database and role in PostgreSQL, write `config.json` (or set `DATABASE_URL`), start the app (it
-applies the migrations), then create the first administrator with `npm run seed:admin` (see `docs/STATUS.md`).
+First run: create the database in PostgreSQL, prepare its schema with the explicit command (`npm run db:migrate -- --apply
+--confirm-database=<name>`: the app does NOT create or migrate it and shows an explanation instead), create the runtime role
+(`npm run db:roles`), write `config.json` (or set `DATABASE_URL`), start the app, then create the first administrator with
+`npm run seed:admin` (see `docs/STATUS.md`).
 
 ## Known external blockers
 

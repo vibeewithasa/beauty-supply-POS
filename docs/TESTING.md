@@ -35,8 +35,11 @@ database is ever written to, overwritten or dropped.
 | `npm run test:receipts` | ticket content, escaping, settings, logo, 80/58 mm PDF output, cancel/failure/retry, permissions | yes |
 | `npm run test:ux` | every screen at 1024x768 / 1366x768 / 1920x1080: overflow, clipped tables, dialogs in viewport, labels, receipt legibility; screenshots in `e2e-artifacts` | yes |
 | `npm run test:packaged` | launches the packaged exe (`npm run package:dir` first) against a throwaway DB: window, login, modules, sale/cash/return/report, CSP, shell hardening, no credentials in the asar, config sources, close/reopen | yes |
-| `npm run test:migrations` | migrations from empty and legacy DBs, precheck, drift, startup abort | yes |
-| `npm run test:all` | unit + every Electron suite + migrations | yes |
+| `npm run test:safety` | legacy sales channels visibility, checkout idempotency (lines compared), connection loss and recovery, safe errors | yes |
+| `npm run test:cash` | register history and closing summaries (cash/card, income/withdrawal, +/- difference, restart, roles, print/export without writes) | yes |
+| `npm run test:migrations` | migrations from empty and legacy DBs (0007/0008), precheck, drift, the app only verifies the schema (empty / behind / newer / unreachable), the explicit `db:migrate` command | yes |
+| `npm run test:ops` | verified backups, restore into a new database (row-by-row comparison), retention, safe errors, Task Scheduler wrapper, least-privilege role | yes |
+| `npm run test:all` | unit + every Electron suite + migrations + ops | yes |
 | `npm run db:precheck` | read-only pre-flight for the integrity migrations (see below) | DB only |
 
 ## Reading results
@@ -64,12 +67,14 @@ Statuses: `PASS`, `FAIL`, `KNOWN_FAIL`, `UNEXPECTED_PASS`, `SKIP`, `WARN`.
 
 ## Applying migrations to an existing database
 
-The application runs pending migrations at startup and **refuses to run** (no IPC handler registered) if they
-fail. Migrations 0004-0006 add constraints, so data that violates them makes the migration roll back as a
-whole. Before starting the app against an existing database:
+The application **never** migrates a database: at startup it only verifies the schema and refuses to run (no IPC handler
+registered) when migrations are missing, the database is empty, or it comes from a newer version. Use the explicit commands
+(full procedure, backups and restore in `docs/OPERATIONS.md`):
 
-1. `pg_dump -Fc` backup.
-2. `npm run db:precheck -- --database=<name>` (read-only). Any `BLOCKER` must be resolved by the operator;
-   nothing is repaired automatically. Legacy sessions closed with `status='open'` are reconciled by 0004 and
-   existing returns are marked `legacy_unspecified` (never `paid`) by 0005.
-3. Start the application (or `npm run db:migrate`).
+1. `npm run db:backup` (optional extra copy; `db:migrate --apply` takes its own verified backup on a database with data).
+2. `npm run db:migrate`: report and dry run, including the read-only integrity precheck. Any `BLOCKER` must be resolved by the
+   operator; nothing is repaired automatically. Legacy sessions closed with `status='open'` are reconciled by 0004 and existing
+   returns are marked `legacy_unspecified` (never `paid`) by 0005.
+3. `npm run db:migrate -- --apply --confirm-database=<name>`.
+
+The E2E runners create and migrate their own throwaway database (`beauty_pos_e2e_<id>`) and never touch another one.

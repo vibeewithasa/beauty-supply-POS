@@ -11,6 +11,7 @@ describes the early MVP and is intentionally not edited here.
 | Sales (cash / card) priced and totalled in the main process, stock-safe under concurrency | implemented and tested. Checkout is **idempotent** (`operationId`), guarded against double submit, and every line stores the product name/SKU as sold |
 | Sales history (`/history`): folio/date/method search, server-side pagination, persisted detail with returns, receipt preview and reprint (a vendor sees only their own sales) | implemented and tested |
 | Receipts: Estética Leal commercial (non-fiscal) ticket, 80 mm / 58 mm, preview, print and reprint from the main process; commercial settings screen (`/settings`, admin) | implemented and tested without a physical printer (print output checked as a PDF of the real print document) |
+| Cash register history (`/cash/history`, from Caja): sessions with filters, closing summary (cash vs card sales apart, manual income/withdrawals, expected, counted, signed difference, related returns), CSV and printable 80/58 mm | implemented and tested (`test:cash`). A vendor sees the open session and the ones they opened/closed |
 | Cash register: one shared register, open/close, income/withdrawal without overdraft, status coherent | implemented and tested |
 | Catalog admin: create/update product, inventory movements (signed deltas), audited price changes, logical delete | implemented and tested, with screens: **Productos** (`/inventory`: list/search, create with initial price+stock, edit, price change with history, logical delete) and **Recepción** (`/receive`: IN/OUT/ADJUST with reason and history) |
 | Returns: validated against the sale, no over-return, restock, refund recorded as `pending` | implemented and tested, with screen (`/returns`: sale lookup, returned/remaining quantities, amount preview, confirmation, history). Shown as **PENDIENTE DE REEMBOLSO**; no button settles it |
@@ -35,6 +36,7 @@ describes the early MVP and is intentionally not edited here.
   The renderer sends only a sale id to the receipt channels: the document is built in main from PostgreSQL.
 - Printing writes nothing to the database. Print automation (`POS_PRINT_MODE_FILE`) and `POS_DEV_PORT` exist only in
   unpackaged builds.
+- Migration 0008 is additive: `cash_movements.sale_id` (NULL for manual movements), filled for old rows only when the sale exists, is in the same register and the amount matches its payment method. Cash summaries use it instead of the movement text.
 - Migration 0007 is additive: `sales.operation_id`, `sale_items.product_name/product_sku` (NULL on old sales, never back-filled),
   `business_settings` (one row, name "Estética Leal", everything else empty).
 - Unexpected errors reach the UI only as `[ERROR_INTERNO]`; details go to the main-process log, redacted.
@@ -70,13 +72,20 @@ describes the early MVP and is intentionally not edited here.
   text: use a dedicated low-privilege PostgreSQL role (details in `docs/PACKAGING.md`).
 - **Installer assets:** no code-signing certificate (SmartScreen warning, updates not trustworthy) and no `build/icon.ico`.
   Auto-update only runs with an explicit `POS_UPDATE_FEED_URL` (https).
-- **Dependencies (reviewed, NOT upgraded):** `npm audit --omit=dev` reports 18 findings (17 high, 1 moderate) in
-  electron 39.2.5, electron-updater, drizzle-orm, react-router(-dom), postcss, zod and transitive packages
-  (lodash, minimatch, nanoid, picomatch, js-yaml...). Whole-tree audit: 45 (2 critical, mostly build tooling).
-  They need a controlled upgrade with the full suite as the safety net (Electron, drizzle-orm and react-router first);
-  `npm audit fix --force` would jump zod to a new major and was not run.
-- **Backups and restore** are not automated; PostgreSQL must be installed and managed on each machine.
-- Lighter-weight leftovers: a legacy unused `drizzle/migrations/0001_initial.sql`, duplicate `AppRouter.tsx`,
+- **Dependencies (Sprint 04):** the 45 findings (2 critical, 32 high) were reduced to **4 moderate, all dev tooling**; `npm audit --omit=dev`
+  reports **0**. Applied: `npm audit fix` (semver-compatible: drizzle-orm 0.45.4, electron-updater, vite, postcss and transitives),
+  **Electron 39.2.5 -> 45.1.0**, **react-router-dom 6 -> 7.18**, **electron-builder 24 -> 26.18**, drizzle-kit 0.31.11, and the **unused `zod`
+  dependency was removed** (nothing imports it). Every upgrade was validated with the full suites and the packaged smoke test. Left: `drizzle-kit`
+  (via `@esbuild-kit/*` -> esbuild's dev-server advisory): dev-only generator, and npm's only "fix" is a downgrade to 0.18.1 that this
+  project cannot use. Nothing was applied with `--force`. Remaining non-security majors (React 19, Vite plugin 6, lucide 1.x, eslint 10...) were not touched.
+- **Operational safety (Sprint 04):** the app never migrates a database (it verifies the schema and refuses to run otherwise); migrations,
+  verified backups, restore into a new database and a least-privilege runtime role are explicit commands (`docs/OPERATIONS.md`).
+  Open items: backups have no off-site copy, the admin commands are Node scripts (a store with only the installer needs them delivered),
+  `config.json` still keeps the password in clear text (use the runtime role; DPAPI storage is future work).
+- **Owner decision pending on access:** `returns:getAll`, `returns:getSaleForReturn` and `returns:create` are still open to every signed-in
+  user (a vendor can look up, and return against, another seller's sale). Documented and pinned by a test, not changed.
+- **Backups:** verified manual and schedulable (Task Scheduler wrapper) backups exist; nothing copies them off the machine. PostgreSQL must be installed and managed on each machine.
+- Lighter-weight leftovers: a legacy unused `drizzle/migrations/0001_initial.sql`,
   the renderer lint is still gentle (warnings only for unused names).
 
 ## Requirements before distributing to a real store

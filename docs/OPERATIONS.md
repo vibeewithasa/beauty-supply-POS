@@ -42,8 +42,8 @@ empty database needs neither. A database from a *newer* version is refused.
 
 Read-only inspection on 2026-10-30 (before this sprint changed anything) showed `beauty_pos` at **7 applied migration rows =
 migrations 0000-0006**, with the owner's own manual-test data (9 sales, 3 cash sessions). Migration **0007** (sales history,
-receipts, settings) and **0008** (cash movements classification, if present in this branch) were **not** applied. With this
-version, opening the POS on it shows the "needs updating" window. Update it deliberately:
+receipts, settings) and **0008** (cash movement sale link, used by the register history) are **pending**. With this version,
+opening the POS on it shows the "needs updating" window and changes nothing. Update it deliberately:
 
 ```bash
 npm run db:migrate                                          # review the plan

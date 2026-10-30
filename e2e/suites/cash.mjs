@@ -28,8 +28,8 @@ export async function run(c) {
   const admin = await data.user("CSH_ADMIN", "admin");
   const v1 = await data.user("CSH_V1", "vendor");
   await closeStrayCash(db, admin.id);
-  const pA = await data.product("CA", "10.00", 500);
-  const pB = await data.product("CB", "4.50", 500);
+  const pA = await data.product("CSHA", "10.00", 500);
+  const pB = await data.product("CSHB", "4.50", 500);
 
   const summaryOf = async (sessionId) => {
     const r = await page.evaluate((id) => window.api.cash.getSessionSummary(id), sessionId);
@@ -146,13 +146,16 @@ export async function run(c) {
     expect(first.slice(0, 3).join() === [C.sessionId, B.sessionId, A.sessionId].join(), "the three real sessions of today come first, newest first");
     await page.getByRole("button", { name: "Siguiente" }).click();
     await page.getByTestId("cash-history-summary").getByText(/Página 2 de/).waitFor();
-    expect((await folios()).length === total - 20, "page 2 has the rest");
+    expect((await folios()).length === Math.min(20, total - 20), "page 2 has the next rows: " + (await folios()).length + " of " + total);
     const today = new Date();
     const iso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
     await page.locator("#ch-from").fill(iso);
     await page.locator("#ch-to").fill(iso);
     await page.getByRole("button", { name: "Buscar", exact: true }).click();
-    await page.getByTestId("cash-history-summary").getByText(/^3 sesiones · Página 1 de 1$/).waitFor();
+    const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const todayCount = (await one("select count(*)::int n from cash_sessions where opened_at >= $1", [startOfToday])).n;
+    expect(todayCount >= 3, "at least the three real sessions of this suite were opened today: " + todayCount);
+    await page.getByTestId("cash-history-summary").getByText(new RegExp("^" + todayCount + " sesiones · Página 1 de " + Math.ceil(todayCount / 20) + "$")).waitFor();
     await page.locator("#ch-status").selectOption("open");
     await page.getByRole("button", { name: "Buscar", exact: true }).click();
     await page.getByText("No hay sesiones de caja que coincidan").waitFor();

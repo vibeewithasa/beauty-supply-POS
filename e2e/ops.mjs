@@ -16,6 +16,7 @@ import {
   createRuntimeRole, dropRuntimeRole, regrantRuntimeRole, runtimeGrantSql, backupFileName, parseConnection, DB_NAME_RE,
 } from "../scripts/lib/db-ops.mjs";
 
+const JOURNAL = JSON.parse(fs.readFileSync(path.join(ROOT, "drizzle/meta/_journal.json"), "utf8")).entries.length;
 const { results, rec, test } = createRecorder("ops", path.join(ROOT, "e2e-artifacts"), () => null);
 const tmpDirs = [];
 const mkTmp = (prefix) => { const d = fs.mkdtempSync(path.join(os.tmpdir(), prefix)); tmpDirs.push(d); return d; };
@@ -74,7 +75,7 @@ try {
     backupFile = path.join(dirWithSpaces, dump);
     const summary = JSON.parse(fs.readFileSync(backupFile.replace(/\.dump$/, ".summary.json"), "utf8"));
     expect(summary.sha256 === sha256File(backupFile), "summary checksum matches the file");
-    expect(summary.counts.users === 2 && summary.counts.sales === 1 && summary.migrationsApplied === 8, "summary counts: " + J(summary.counts));
+    expect(summary.counts.users === 2 && summary.counts.sales === 1 && summary.migrationsApplied === JOURNAL, "summary counts: " + J(summary.counts));
     expect(listDump(backupFile, PG_BIN).tableData >= 11, "pg_restore -l lists the tables with data");
     for (const f of files) {
       const text = fs.readFileSync(path.join(dirWithSpaces, f), "latin1");
@@ -239,7 +240,7 @@ try {
     try {
       // what the application does
       expect((await rt.query("select count(*)::int n from users")).rows[0].n === 2, "SELECT");
-      expect((await rt.query("select hash from drizzle.__drizzle_migrations")).rowCount === 8, "reads the migration table for the startup check");
+      expect((await rt.query("select hash from drizzle.__drizzle_migrations")).rowCount === JOURNAL, "reads the migration table for the startup check");
       await rt.query("begin");
       await rt.query("select pg_advisory_xact_lock(7481201)");
       await rt.query("select * from products where id=1 for update");

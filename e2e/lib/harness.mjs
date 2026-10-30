@@ -230,8 +230,10 @@ export async function launchApp(runDb, db, artifacts, extraEnv = {}) {
 }
 
 // ---------------------------------------------------------------- synthetic data
+// shared by every suite of the process: a PIN handed out once is never handed out again, even after its owner's legacy
+// hash was upgraded to scrypt (which the sha256 comparison below can no longer see)
+const usedPins = new Set();
 export function makeData(db, runId) {
-  const usedPins = new Set();
   // len 4 = legacy-style PIN (fixtures only); 6-8 = what the application accepts for new PINs
   const newPin = async (len = 4) => {
     const existing = new Set((await db.query("select pin_hash from users")).rows.map((r) => r.pin_hash));
