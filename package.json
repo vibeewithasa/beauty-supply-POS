@@ -42,14 +42,15 @@
     "test:loginsec": "node e2e/run.mjs loginsec",
     "test:setup": "node e2e/run.mjs setup",
     "test:migrations": "node e2e/migrations.mjs",
-    "test:all": "npm run test:unit && node e2e/run.mjs all && node e2e/migrations.mjs && node e2e/ops.mjs",
+    "test:all": "npm run test:unit && node e2e/run.mjs all && node e2e/migrations.mjs && node e2e/ops.mjs && npm run test:legacy",
     "package:dir": "npm run build && electron-builder --win dir",
     "test:packaged": "node e2e/packaged.mjs",
     "db:status": "node ./scripts/db-status.mjs",
     "db:backup": "node ./scripts/db-backup.mjs",
     "db:restore": "node ./scripts/db-restore.mjs",
     "db:roles": "node ./scripts/db-roles.mjs",
-    "test:ops": "node e2e/ops.mjs"
+    "test:ops": "node e2e/ops.mjs",
+    "test:legacy": "node --experimental-strip-types e2e/legacy.mjs"
   },
   "build": {
     "appId": "com.beauty.pos",

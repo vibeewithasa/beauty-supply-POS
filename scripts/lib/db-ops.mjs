@@ -173,7 +173,74 @@ export const backupFileName = (db, label, date = new Date()) => `${db}_${sanitiz
  * Takes a verified custom-format backup of the database in `url` into `outDir` (outside the repository).
  * Returns the summary that is also written next to the dump. Never overwrites an existing file.
  */
-export async function backupDatabase({ url, outDir, label = "manual", keep = 0, bin = findPgBin(), env = process.env, now = new Date() }) {
+// ------------------------------------------------------------------ second copy (operator-chosen location)
+// A backup on the same disk as the database does not survive that disk. The operator can name a SECOND location (an external
+// drive, a USB stick, a folder on another PC of the local network). This tool only COPIES there: it uploads nothing to any
+// service, refuses URLs and the folders that cloud clients synchronize (the backups hold real customer and sales data and PIN
+// hashes), never overwrites a file, never deletes anything in that location and verifies every copy with SHA-256.
+const URL_LIKE = /^[a-z][a-z0-9+.-]*:\/\//i;
+const SYNCED_FOLDER = /(^|[\\/])(onedrive[^\\/]*|dropbox|google ?drive|icloud ?drive|mega|box sync|pcloud ?drive|nextcloud|sync\.com)([\\/]|$)/i;
+
+/** Validates the chosen location (pure: no disk access). Returns the resolved folder. */
+export function validateSecondLocation(dir, primaryDir, env = process.env) {
+  if (typeof dir !== "string" || dir.trim() === "" || dir.includes("\u0000")) throw new OpsError("SEGUNDA_COPIA_INVALIDA", "Indica la carpeta de la segunda copia");
+  if (URL_LIKE.test(dir.trim())) throw new OpsError("SEGUNDA_COPIA_URL", "La segunda copia es una carpeta local o de la red local: esta herramienta no sube respaldos a internet ni a servicios en la nube");
+  const resolved = path.resolve(dir.trim());
+  const primary = path.resolve(primaryDir);
+  const rel = path.relative(primary, resolved);
+  if (rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel))) throw new OpsError("SEGUNDA_COPIA_IGUAL", "La segunda copia debe estar en una ubicación distinta de la principal (si no, no protege contra la pérdida del disco)");
+  if (SYNCED_FOLDER.test(resolved) && env.POS_ALLOW_SYNCED_FOLDER !== "1") {
+    throw new OpsError("SEGUNDA_COPIA_NUBE", "Esa carpeta parece sincronizarse con un servicio en la nube: los respaldos contienen datos reales y no se envían a servicios no autorizados. Elige un disco externo o define POS_ALLOW_SYNCED_FOLDER=1 bajo tu responsabilidad");
+  }
+  return resolved;
+}
+
+/**
+ * Copies a backup (dump + summary) to the second location and verifies it. Never throws: the primary backup is already done
+ * and verified, so the outcome is reported as { status: "verified" | "unavailable" | "failed", ... } for the caller to log.
+ */
+export function copyToSecondLocation({ file, destDir }) {
+  const base = path.basename(file);
+  const files = [file, file.replace(/\.dump$/, ".summary.json")].filter((f) => fs.existsSync(f));
+  const out = (status, message, extra = {}) => ({ status, dir: destDir, file: base, message, ...extra });
+  try {
+    if (!fs.existsSync(destDir)) {
+      // one level at most: a missing drive or a missing parent means the location is not there (unplugged disk), not "create it"
+      if (!fs.existsSync(path.dirname(destDir))) return out("unavailable", "El destino de la segunda copia no está disponible (¿disco externo desconectado?). El respaldo principal sí quedó verificado");
+      fs.mkdirSync(destDir);
+    }
+    fs.accessSync(destDir, fs.constants.W_OK);
+  } catch {
+    return out("unavailable", "No se puede escribir en el destino de la segunda copia. El respaldo principal sí quedó verificado");
+  }
+  try {
+    let present = 0;
+    for (const src of files) {
+      const dest = path.join(destDir, path.basename(src));
+      const want = sha256File(src);
+      if (fs.existsSync(dest)) {
+        if (sha256File(dest) !== want) return out("failed", `Ya existe ${path.basename(src)} en la segunda ubicación con otro contenido: no se sobrescribe`);
+        present += 1;
+        continue;
+      }
+      const partial = dest + ".partial";
+      fs.rmSync(partial, { force: true });
+      fs.copyFileSync(src, partial, fs.constants.COPYFILE_EXCL);
+      if (sha256File(partial) !== want) {
+        fs.rmSync(partial, { force: true });
+        return out("failed", "La copia no coincide con el original (SHA-256): se descartó");
+      }
+      fs.renameSync(partial, dest);
+      if (sha256File(dest) !== want) return out("failed", "La copia final no coincide con el original (SHA-256)");
+    }
+    const sha = sha256File(path.join(destDir, base));
+    return out("verified", present === files.length ? "La segunda copia ya existía y coincide (SHA-256)" : "Segunda copia verificada (SHA-256)", { sha256: sha });
+  } catch (e) {
+    return out("failed", "No se pudo completar la segunda copia: " + (e && e.code ? e.code : "error de disco"));
+  }
+}
+
+export async function backupDatabase({ url, outDir, label = "manual", keep = 0, secondCopyDir = null, bin = findPgBin(), env = process.env, now = new Date() }) {
   const conn = parseConnection(url);
   assertLocal(conn, env);
   if (!DB_NAME_RE.test(conn.database)) throw new OpsError("BASE_INVALIDA", "El nombre de la base de datos no es válido");
@@ -226,7 +293,18 @@ export async function backupDatabase({ url, outDir, label = "manual", keep = 0, 
   };
   fs.writeFileSync(final.replace(/\.dump$/, ".summary.json"), JSON.stringify(summary, null, 2) + "\n", { flag: "wx" });
   const pruned = keep > 0 ? pruneBackups(dir, conn.database, keep) : { kept: [], deleted: [] };
-  return { file: final, summary, pruned };
+  // The second copy never decides whether the primary backup exists: the dump is already verified and written; this only reports.
+  let secondCopy = null;
+  if (secondCopyDir) {
+    let second;
+    try {
+      second = validateSecondLocation(secondCopyDir, dir, env);
+    } catch (e) {
+      secondCopy = { status: "failed", dir: String(secondCopyDir), file: path.basename(final), message: e.message };
+    }
+    if (!secondCopy) secondCopy = copyToSecondLocation({ file: final, destDir: second });
+  }
+  return { file: final, summary, pruned, secondCopy };
 }
 
 /** Keeps the newest `keep` backups made by this tool for `db` in `dir`; never touches any other file. */
