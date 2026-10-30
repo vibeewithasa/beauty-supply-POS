@@ -4,24 +4,30 @@
 //
 // A migration is identified by the same hash drizzle records in drizzle.__drizzle_migrations: the SHA-256 of the
 // .sql file content. The journal (drizzle/meta/_journal.json) is the list of migrations the app requires.
+//
+// Line endings: drizzle hashes the file BYTES, so the same migration checked out with LF (CI, Linux, the repository's .gitattributes)
+// or with CRLF (a Windows checkout with core.autocrlf=true) has two different hashes. A database migrated from one checkout must not
+// be rejected by an app packaged from the other, so each migration is recognised by its raw hash, its LF form AND its CRLF form.
+// (Only line endings are normalised: any other change to a migration still changes the hash and is still refused.)
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
 /**
- * @typedef {{ idx: number, tag: string, when: number, hash: string }} JournalEntry
+ * @typedef {{ idx: number, tag: string, when: number, hash: string, hashes?: string[] }} JournalEntry
  * @typedef {{ status: "ok" | "missing" | "newer" | "uninitialized", required: number, applied: number, missing: string[], unknown: number }} SchemaState
  */
 
 /** @returns {JournalEntry[]} */
 export function readJournal(migrationsFolder) {
   const journal = JSON.parse(fs.readFileSync(path.join(migrationsFolder, "meta", "_journal.json"), "utf8"));
-  return journal.entries.map((e) => ({
-    idx: e.idx,
-    tag: e.tag,
-    when: e.when,
-    hash: crypto.createHash("sha256").update(fs.readFileSync(path.join(migrationsFolder, e.tag + ".sql"), "utf8")).digest("hex"),
-  }));
+  const sha = (text) => crypto.createHash("sha256").update(text).digest("hex");
+  return journal.entries.map((e) => {
+    const text = fs.readFileSync(path.join(migrationsFolder, e.tag + ".sql"), "utf8");
+    const lf = text.replace(/\r\n/g, "\n");
+    const raw = sha(text);
+    return { idx: e.idx, tag: e.tag, when: e.when, hash: raw, hashes: [...new Set([raw, sha(lf), sha(lf.replace(/\n/g, "\r\n"))])] };
+  });
 }
 
 /**
@@ -32,9 +38,10 @@ export function readJournal(migrationsFolder) {
 export function evaluateSchema(journal, applied) {
   const required = journal.length;
   if (applied === null) return { status: "uninitialized", required, applied: 0, missing: journal.map((j) => j.tag), unknown: 0 };
+  const variants = (j) => j.hashes ?? [j.hash];
   const have = new Set(applied.map((r) => r.hash));
-  const known = new Set(journal.map((j) => j.hash));
-  const missing = journal.filter((j) => !have.has(j.hash)).map((j) => j.tag);
+  const known = new Set(journal.flatMap(variants));
+  const missing = journal.filter((j) => !variants(j).some((h) => have.has(h))).map((j) => j.tag);
   const unknown = applied.filter((r) => !known.has(r.hash)).length;
   // Rows this version does not know mean the database was upgraded by a NEWER version: running on it is unsafe.
   if (unknown > 0) return { status: "newer", required, applied: applied.length, missing, unknown };

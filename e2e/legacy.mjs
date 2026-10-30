@@ -115,6 +115,13 @@ try {
         expect(mig === found.expected.migrations && found.expected.migrations < JOURNAL.length, `the copy is behind the current journal (${mig} of ${JOURNAL.length}): 0007, 0008 and 0009 are pending`);
         const st = await schemaStatus(urlFor(target), path.join(ROOT, "drizzle"));
         expect(st.status === "missing" && st.missing.join() === JOURNAL.slice(found.expected.migrations).map((e) => e.tag).join(), "the pending ones are exactly: " + st.missing.join(", "));
+        // the same database seen by an app whose migration files were checked out with CRLF (Windows autocrlf): still recognised
+        const crlf = mkTmp("e2e legacy crlf ");
+        fs.mkdirSync(path.join(crlf, "meta"));
+        fs.copyFileSync(path.join(ROOT, "drizzle/meta/_journal.json"), path.join(crlf, "meta/_journal.json"));
+        for (const e of JOURNAL) fs.writeFileSync(path.join(crlf, e.tag + ".sql"), fs.readFileSync(path.join(ROOT, "drizzle", e.tag + ".sql"), "utf8").replace(/\r\n/g, "\n").replace(/\n/g, "\r\n"));
+        const stCrlf = await schemaStatus(urlFor(target), crlf);
+        expect(stCrlf.status === "missing" && stCrlf.missing.join() === st.missing.join() && stCrlf.unknown === 0, "line endings do not change what the database is recognised as: " + J(stCrlf));
       } finally { await c.end(); }
       return `restored as ${target}: sales=${r.counts.sales}, cash_sessions=${r.counts.cash_sessions}, cash_movements=${r.counts.cash_movements}, inventory_movements=${r.counts.inventory_movements}, users=${r.counts.users}` +
         (r.counts.sales === 9 && r.counts.cash_sessions === 3 ? " (9 sales and 3 sessions, as the owner's manual tests left them)" : " (NOT 9 sales / 3 sessions: these are the real counts of the backup)");

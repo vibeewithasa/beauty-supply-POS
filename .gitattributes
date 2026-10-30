@@ -1,0 +1,4 @@
+# Migrations are hashed byte for byte (drizzle records the SHA-256 of the file): keep them identical on every checkout, whatever
+# core.autocrlf says, so a database migrated from one machine is recognised by the app built on another.
+drizzle/*.sql text eol=lf
+drizzle/meta/*.json text eol=lf
