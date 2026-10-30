@@ -11,6 +11,7 @@ import UsersPage from "./app/users/page";
 import StockPage from "./app/stock/page";
 import ReceivePage from "./app/receive/page";
 import HistoryPage from "./app/history/page";
+import SettingsPage from "./app/settings/page";
 
 interface User {
   id: number;
@@ -133,6 +134,14 @@ function App() {
         element={
           <ProtectedRoute requiredRole="admin">
             <ReportsPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/settings"
+        element={
+          <ProtectedRoute requiredRole="admin">
+            <SettingsPage />
           </ProtectedRoute>
         }
       />

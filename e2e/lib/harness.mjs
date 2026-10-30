@@ -163,7 +163,8 @@ export async function startConnMonitor() {
   const timer = setInterval(async () => {
     if (busy) return; busy = true;
     try {
-      const r = await c.query("select datname, count(*)::int n from pg_stat_activity where backend_type='client backend' and application_name='e2e_app' group by 1");
+      // datname is NULL for a backend that is still starting up (not bound to any database yet): it is seen again, bound, on the next poll
+      const r = await c.query("select datname, count(*)::int n from pg_stat_activity where backend_type='client backend' and application_name='e2e_app' and datname is not null group by 1");
       for (const x of r.rows) seen.set(x.datname, (seen.get(x.datname) || 0) + 1);
     } catch {} finally { busy = false; }
   }, 100);

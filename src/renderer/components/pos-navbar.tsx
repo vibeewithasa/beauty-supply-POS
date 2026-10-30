@@ -14,6 +14,7 @@ import {
   Package,
   FileText,
   Receipt,
+  Settings,
 } from "lucide-react";
 
 interface User {
@@ -52,6 +53,7 @@ const ADMIN_GROUPS: NavGroup[] = [
       { href: "/dashboard", icon: BarChart3, label: "Dashboard" },
       { href: "/reports", icon: FileText, label: "Reportes" },
       { href: "/users", icon: Users, label: "Usuarios" },
+      { href: "/settings", icon: Settings, label: "Configuración" },
     ],
   },
 ];
