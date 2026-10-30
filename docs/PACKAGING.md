@@ -32,26 +32,44 @@ production `node_modules`. It never contains `.env`, credentials or source maps 
 
 The connection string is **never packaged**. It is resolved at startup, in this order:
 
-1. `DATABASE_URL` in the process environment.
-2. Packaged app: `config.json` in the user data folder (`%APPDATA%\Beauty POS\config.json`):
-   `{ "databaseUrl": "<PostgreSQL connection URL: role, password, localhost:5432, database name>" }` (same format as
-   `DATABASE_URL` in `.env.example`).
-   Development: `.env` in the working directory (a packaged app never reads `.env`).
+1. `DATABASE_URL` in the process environment (the operator's own configuration; it is never stored and never opens the setup window).
+2. Packaged app: `config.json` in the user data folder (`%APPDATA%\Beauty POS\config.json`), written by the **first-run setup window** and **protected by Windows**:
+   `{ "version": 2, "host", "port", "database", "user", "passwordEncrypted": "<DPAPI blob>" }`. Only the password is secret and it is encrypted with Electron
+   `safeStorage` (Windows DPAPI): it can only be decrypted by the same Windows user on the same machine. A **legacy plain-text file**
+   (`{ "databaseUrl": "<connection URL>" }`) is still read and is **upgraded in place** at the first start (the new file is verified to decrypt to the same
+   password before it replaces the old one; no backup copy of the plain text is made).
+   Development: `.env` in the working directory (a packaged app never reads `.env`). `POS_USE_CONFIG_FILE=1` makes a development build use `config.json`
+   instead (tests only).
 
 Rules and risks:
 
 * The host must be loopback (`localhost`, `127.0.0.1`, `::1`). A LAN server requires an explicit `POS_ALLOW_REMOTE_DB=1`.
   Never expose PostgreSQL to the internet.
-* `config.json` stores the password in plain text, readable by that Windows user (and administrators). Use a dedicated
-  PostgreSQL role with only data privileges (`npm run db:roles`, see `docs/OPERATIONS.md`: the app no longer migrates, so its runtime
-  login needs no DDL), a strong unique password, and restrict the folder to the store's Windows account. Do not reuse a shared password.
-* Without a valid configuration the app shows a "configuration missing" window, registers no IPC handler and runs no query.
+* Encrypting the password does **not** replace least privilege: whoever runs as that Windows user can still use the application's own connection. Use a
+  dedicated PostgreSQL role with only data privileges (`npm run db:roles`, see `docs/OPERATIONS.md`: the app no longer migrates, so its runtime login
+  needs no DDL), a strong unique password, and a Windows account used only by the store.
+* **Fail-safe:** with no protected storage available nothing is saved (never a plain-text fallback); an existing file is left exactly as it was. A password that the
+  current Windows account cannot decrypt (another user, another PC, a copied profile) opens the setup window with the data prefilled. `safeStorage` only works once the
+  app is ready, so the database module is loaded after that (`main.ts`).
+* Without a valid configuration the app opens the **setup window** (own preload with four calls; no application channel is registered; it never migrates). A bad
+  `DATABASE_URL` shows an explanation window instead. `"Beauty POS.exe" --reconfigure` opens the setup window again to point the app at another database.
 * The connection string and password are redacted from logs and from errors that reach the renderer.
 
 First run: create the database in PostgreSQL, prepare its schema with the explicit command (`npm run db:migrate -- --apply
---confirm-database=<name>`: the app does NOT create or migrate it and shows an explanation instead), create the runtime role
-(`npm run db:roles`), write `config.json` (or set `DATABASE_URL`), start the app, then create the first administrator with
-`npm run seed:admin` (see `docs/STATUS.md`).
+--confirm-database=<name>`: the app does NOT create or migrate it and the setup window only reports what is missing), create the runtime role
+(`npm run db:roles`), start the app: the setup window tests the connection, reports PostgreSQL's version, the role's privileges and the schema version,
+creates the first administrator (6 to 8 digit PIN) and stores the connection protected by Windows. `npm run seed:admin` remains available for headless setups.
+The full procedure is in `docs/PILOT_CHECKLIST.md`.
+
+## Installer status (NSIS)
+
+* `npm run package:dir` (unpacked) is what `test:packaged` drives (16 checks, including the protected configuration and the setup window).
+* The **NSIS installer was generated** with `electron-builder --win nsis` into a temporary folder (outside the repository, deleted afterwards): `Beauty POS Setup 0.1.0.exe`,
+  about 120 MB, unsigned, default Electron icon. Its payload was extracted (without installing) and `resources/app.asar` is **byte-identical** to the one the packaged tests ran
+  against (SHA-256 `ac4d880d…`), with no `.env`, `config.json`, dump or credential inside. Generating it downloaded the NSIS build tools into the electron-builder cache.
+* **It was NOT installed or uninstalled.** There is no disposable Windows environment on the development PC (Windows 11 Home: no Windows Sandbox, no Hyper-V) and installing on the
+  owner's Windows was not authorized. Clean install, first start from an installed copy, Start Menu entry, uninstall and "PostgreSQL data preserved after uninstall" are **pending**
+  (run them in a VM or a spare PC). The NSIS configuration is one-click, per-user. Installers are never published or distributed from this repository.
 
 ## Known external blockers
 

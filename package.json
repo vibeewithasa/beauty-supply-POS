@@ -41,6 +41,7 @@
     "test:refundui": "node e2e/run.mjs refundui",
     "test:loginsec": "node e2e/run.mjs loginsec",
     "test:setup": "node e2e/run.mjs setup",
+    "test:pilot": "node e2e/run.mjs pilot",
     "test:migrations": "node e2e/migrations.mjs",
     "test:all": "npm run test:unit && node e2e/run.mjs all && node e2e/migrations.mjs && node e2e/ops.mjs && npm run test:legacy",
     "package:dir": "npm run build && electron-builder --win dir",

@@ -293,6 +293,39 @@ export async function run(c) {
       } finally { await stop(l); }
     });
 
+    await test("SETUP-12.reconfigure_opens_the_setup_with_the_data_prefilled_even_when_the_stored_connection_works", "integration", async () => {
+      const ud = tmpDir();
+      // a working protected configuration first (saved through the setup window itself)
+      const l = await start(ud);
+      await l.page.locator("#btn-test").waitFor();
+      await fillConnection(l.page, good);
+      await probe(l.page);
+      const exited = new Promise((resolve) => l.app.process().once("exit", resolve));
+      await l.page.locator("#btn-save").click();
+      await Promise.race([exited, sleep(15000)]);
+      const saved = fs.readFileSync(cfgPath(ud), "utf8");
+      // normal start: the application, not the setup
+      const l2 = await launchApp(c.runDb, db, artifacts, { ...env }, { userData: ud, noDatabaseUrl: true });
+      apps.push(l2.app);
+      await l2.page.getByText("Ingresa tu PIN para comenzar").waitFor({ timeout: 15000 });
+      await stop(l2);
+      // --reconfigure: the setup window, prefilled, never with the password
+      const l3 = await launchApp(c.runDb, db, artifacts, { ...env }, { userData: ud, noDatabaseUrl: true, raw: true, extraArgs: ["--reconfigure"] });
+      apps.push(l3.app);
+      try {
+        await l3.page.getByRole("heading", { name: "Reconfigurar la conexión a la base de datos" }).waitFor({ timeout: 15000 });
+        await waitFor(async () => (await l3.page.locator("#user").inputValue()) === roleName, 8000);
+        expect((await l3.page.locator("#database").inputValue()) === c.runDb && (await l3.page.locator("#password").inputValue()) === "", "host, database and user prefilled; the password field empty");
+        expect(fs.readFileSync(cfgPath(ud), "utf8") === saved, "opening it changes nothing");
+        const handlers = await l3.app.evaluate(({ ipcMain }) => [...ipcMain._invokeHandlers.keys()]);
+        expect(!handlers.some((h) => /^(auth|sales|cash):/.test(h)), "no application channel is registered in the reconfiguration window");
+      } finally { await stop(l3); }
+      // an operator-managed DATABASE_URL is never overridden by the flag
+      const l4 = await launchApp(c.runDb, db, artifacts, { ...env }, { userData: tmpDir(), raw: false, extraArgs: ["--reconfigure"] });
+      apps.push(l4.app);
+      try { await l4.page.getByText("Ingresa tu PIN para comenzar").waitFor({ timeout: 15000 }); } finally { await stop(l4); }
+    });
+
     await test("SETUP-11.the_setup_channels_exist_only_in_the_setup_window", "security", async () => {
       // the normal application (started by the harness with DATABASE_URL) has no setup channel and its renderer no bridge
       const handlers = await c.app.evaluate(({ ipcMain }) => [...ipcMain._invokeHandlers.keys()]);

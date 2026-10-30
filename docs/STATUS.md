@@ -7,7 +7,12 @@ describes the early MVP and is intentionally not edited here.
 
 | Area | State |
 |---|---|
-| Login by PIN, roles (admin/vendor), sessions owned by the Electron main process, revocation, brute-force limiter | implemented and tested |
+| Login by PIN, roles (admin/vendor), sessions owned by the Electron main process, revocation | implemented and tested |
+| PIN attempt limiter (Sprint 06): ONE installation-wide counter for login AND administrator authorization; a success gives no attempts back (signing in between guesses recovers nothing); serialized (parallel bursts cannot beat it); shared by every window; persisted so a restart does not reset it; sanitized on load; every lock ends by itself (30 s, doubling up to 15 min; failures forgotten after 15 quiet minutes) | implemented and tested (`test:loginsec`, `test:hardening`, `test:refundauth`, unit). Wrong/unknown/inactive/malformed PINs are indistinguishable |
+| PostgreSQL credentials (Sprint 06): the password in `config.json` is encrypted with Windows (safeStorage/DPAPI, bound to the Windows user); legacy plain-text files are upgraded in place; no plain-text fallback; first-run setup window (connection test, PostgreSQL version, role privileges, schema version, first administrator, `--reconfigure`), never migrates | implemented and tested with the real DPAPI (`test:setup`, packaged PK-08/PK-15, unit) |
+| Backups with a second operator-chosen location (external drive / LAN folder): SHA-256 verified, never overwritten, nothing deleted there, URLs and cloud-synchronized folders refused, dated log, exit code 3 when unavailable, recovery from the copy | implemented and tested (`test:ops` OPS-10..13, pilot) |
+| Migration of a COPY of the owner's real data (9 sales, 3 sessions) with 0007-0009 and the packaged app on it | validated (`test:legacy`); `beauty_pos` itself NOT updated (owner's decision) |
+| A complete store day on a new database (setup, products, stock, register, cash/card sales, reprint, refunds with PIN, reports, reconciliation, close, restart, backup, restore, compare) and the visual review of the screens at 1024x768 | implemented and tested (`test:pilot`, 25 steps) |
 | Sales (cash / card) priced and totalled in the main process, stock-safe under concurrency | implemented and tested. Checkout is **idempotent** (`operationId`), guarded against double submit, and every line stores the product name/SKU as sold |
 | Sales history (`/history`): folio/date/method search, server-side pagination, persisted detail with returns, receipt preview and reprint (a vendor sees only their own sales) | implemented and tested |
 | Receipts: Estética Leal commercial (non-fiscal) ticket, 80 mm / 58 mm, preview, print and reprint from the main process; commercial settings screen (`/settings`, admin) | implemented and tested without a physical printer (print output checked as a PDF of the real print document) |
@@ -18,8 +23,8 @@ describes the early MVP and is intentionally not edited here.
 | Users: create/update/deactivate, unique PIN, last-admin protection | implemented and tested (existing users page) |
 | Dashboard: sales, cash, refunds owed vs paid in cash vs paid by card (by payment date) | implemented and tested |
 | Reports (`/reports`, admin): gross sales, by payment method, top products, returns by refund status, local CSV export; dates validated in main (max 366 days). No profit/cost/tax figures (not recorded) | implemented and tested |
-| Thermal-printer hardware validation, CFDI/fiscal invoicing, backups | **not implemented / not tested on hardware** |
-| Packaged Windows app (unpacked build, `npm run package:dir`) | works: window, login, every module, sale/cash/return/report, close and reopen, verified by `npm run test:packaged` (see `docs/PACKAGING.md`). **Installer unsigned; auto-update disabled** |
+| Thermal-printer hardware validation, barcode reader, touch screen, CFDI/fiscal invoicing, off-site backups | **not implemented / not tested on hardware** |
+| Packaged Windows app (unpacked build, `npm run package:dir`) | works: window, login, every module, sale/cash/return/report, close and reopen, protected configuration, setup window, verified by `npm run test:packaged` (see `docs/PACKAGING.md`). **The NSIS installer was generated (unsigned) and its payload compared, but NOT installed/uninstalled (no disposable Windows environment); auto-update disabled** |
 
 ## Contracts worth knowing
 
@@ -71,9 +76,9 @@ describes the early MVP and is intentionally not edited here.
   `ADMIN_PIN` for that single command; it is never printed or logged.
 - **Packaged build:** fixed (`base: "./"`, `HashRouter`, CSP in the built `index.html`, shell hardening). The CSP is only
   exercised by the packaged tests (the dev server has none).
-- **Database configuration in the package:** nothing is packaged. `DATABASE_URL` from the environment or `config.json` in
-  the user data folder (loopback hosts only unless `POS_ALLOW_REMOTE_DB=1`). `config.json` holds the password in plain
-  text: use a dedicated low-privilege PostgreSQL role (details in `docs/PACKAGING.md`).
+- **Database configuration in the package:** nothing is packaged. `DATABASE_URL` from the environment or the protected `config.json` in
+  the user data folder (loopback hosts only unless `POS_ALLOW_REMOTE_DB=1`). The password is encrypted with Windows (DPAPI); encryption protects the stored secret, it does
+  not replace a low-privilege PostgreSQL role, and any process running as that Windows user can still use the application's connection (details in `docs/PACKAGING.md`).
 - **Installer assets:** no code-signing certificate (SmartScreen warning, updates not trustworthy) and no `build/icon.ico`.
   Auto-update only runs with an explicit `POS_UPDATE_FEED_URL` (https).
 - **Dependencies (Sprint 04):** the 45 findings (2 critical, 32 high) were reduced to **4 moderate, all dev tooling**; `npm audit --omit=dev`
@@ -84,16 +89,20 @@ describes the early MVP and is intentionally not edited here.
   project cannot use. Nothing was applied with `--force`. Remaining non-security majors (React 19, Vite plugin 6, lucide 1.x, eslint 10...) were not touched.
 - **Operational safety (Sprint 04):** the app never migrates a database (it verifies the schema and refuses to run otherwise); migrations,
   verified backups, restore into a new database and a least-privilege runtime role are explicit commands (`docs/OPERATIONS.md`).
-  Open items: backups have no off-site copy, the admin commands are Node scripts (a store with only the installer needs them delivered),
-  `config.json` still keeps the password in clear text (use the runtime role; DPAPI storage is future work).
+  Open items: the admin commands are Node scripts (a store with only the installer needs them delivered). (Sprint 06 closed: the password at rest, and a second backup location.)
 - **Owner decision pending on access:** `returns:getAll`, `returns:getSaleForReturn` and `returns:create` are still open to every signed-in
   user (a vendor can look up, and return against, another seller's sale). Documented and pinned by a test, not changed. Paying a refund is not
   open: it needs an administrator PIN.
-- **Refund PIN (Sprint 05):** the administrator authorization has its own attempt budget (a successful login does not reset it). The pre-existing login
-  counter can still be reset by any successful login, so a signed-in user could alternate guesses at an administrator PIN through the login screen;
-  only longer PINs and the lock slow that down. The system records what the operator confirms about the physical delivery of money; it cannot verify it.
+- **Refund PIN (Sprint 05, hardened in Sprint 06):** the administrator authorization and the login now share ONE attempt budget that a success never gives back, so the
+  "alternate guesses and own logins" evasion no longer exists (it is tested). What remains is the nature of a small PIN space: about 5 guesses per 15 quiet minutes can still be
+  made against all PINs together, so long PINs, PostgreSQL's protection and the Windows account matter. The counter file can be deleted by whoever controls the Windows account.
+  The system records what the operator confirms about the physical delivery of money; it cannot verify it.
   Cash refunds are taken from the register open at payment time, not necessarily the session of the sale. No physical printer was tested for the voucher.
-- **Backups:** verified manual and schedulable (Task Scheduler wrapper) backups exist; nothing copies them off the machine. PostgreSQL must be installed and managed on each machine.
+- **Backups:** verified manual and schedulable (Task Scheduler wrapper) backups with an optional verified second copy on an external/LAN location. Nothing is sent off-site by design.
+  Backups hold real data and PIN hashes: keep the media encrypted or controlled. PostgreSQL must be installed and managed on each machine.
+- **Pilot readiness (Sprint 06, `docs/PILOT_CHECKLIST.md`):** code is ready to be tried in a controlled pilot; it is NOT ready for a real store until: the installer is installed/uninstalled in a
+  disposable environment and signed, the printer, reader and touch screen are tested, the owner's `beauty_pos` is updated deliberately (still 0000-0006 at the last check), and the
+  open product questions are decided.
 - Lighter-weight leftovers: a legacy unused `drizzle/migrations/0001_initial.sql`,
   the renderer lint is still gentle (warnings only for unused names).
 
@@ -101,5 +110,5 @@ describes the early MVP and is intentionally not edited here.
 
 1. (done) PIN storage is salted scrypt. 2. (done) Packaged renderer and configuration path.
 3. (done) Screens for product/inventory/price management, returns and reports.
-4. Decide the pending product questions. 5. Dependency upgrade + audit. 6. Backup/restore procedure.
+4. Decide the pending product questions. 5. (done) Dependency upgrade + audit. 6. (done) Backup/restore procedure with a second copy. 7a. (done) Protected credentials and first-run setup.
 7. (done) Electron shell hardening. Still open: code signing certificate and a trusted update channel.

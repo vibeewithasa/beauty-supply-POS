@@ -51,6 +51,17 @@ npm run db:migrate                                          # review the plan
 npm run db:migrate -- --apply --confirm-database=beauty_pos
 ```
 
+**Validated on a copy (Sprint 06, `npm run test:legacy`).** The newest validated backup (`beauty_pos_sprint04_after-user-manual-tests_20261030T051158.dump`, taken after the
+owner's manual tests; its SHA-256 matches its summary) was restored into a NEW disposable database, and the whole update was run there with the real commands: the dry run
+reported exactly `0007`, `0008` and `0009` as missing and changed nothing; `--apply` refused to run without the exact database name, took a verified pre-migration backup
+and applied them. The counts the backup itself recorded were checked, not assumed: **9 sales, 3 register sessions, 12 cash movements, 9 inventory movements, 2 users
+(one scrypt, one legacy SHA-256), 1 product, 0 returns**. After the migration every historical table is byte-identical (compared without the columns the migrations add),
+every foreign key has no orphan, every sale equals the sum of its lines, the 3 sessions reconcile to the cent, **9 of the 12 cash movements were linked to their sale** (the
+other 3 are manual movements), the business settings row is the default one, the refund ledger is empty and nothing became "paid". The packaged application then opened that
+copy and showed the history, a receipt, the three register sessions and a report whose totals equal SQL; a scrypt test admin and a legacy-hash test vendor (added to the COPY)
+both signed in and the legacy hash was upgraded. `beauty_pos` itself was not opened by that test, and the backup files were only read (SHA-256 and timestamps compared).
+Remember it is **not** applied to `beauty_pos`: that is your decision.
+
 ## Backups
 
 ```bash
@@ -66,6 +77,27 @@ npm run db:backup -- --out "D:\Respaldos POS" --label diario --keep 14
   summaries. Other files in the folder are never touched.
 * Exit code 0 only when the dump was verified; otherwise non-zero and a safe message. Paths with spaces are supported.
 
+### Second copy (external location)
+
+```bash
+npm run db:backup -- --out "D:\Respaldos POS" --label diario --keep 14 --second-copy "E:\Copia externa"
+set POS_BACKUP_SECOND_DIR=E:\Copia externa            # or this variable (used by scripts/db-backup-task.cmd)
+```
+
+* The second location is chosen **by the operator**: an external drive, a USB stick, or a folder of another PC of the local network. The tool only COPIES there.
+  It uploads nothing to any service, **refuses URLs** (`https://`, `s3://`, ...) and the **folders that cloud clients synchronize** (OneDrive, Dropbox, Google Drive, iCloud,
+  MEGA, Nextcloud; `POS_ALLOW_SYNCED_FOLDER=1` overrides it under your responsibility), the **same place** as the primary and a folder **inside the project**.
+* Every file (the dump and its summary) is copied to a `.partial` name, **verified with SHA-256**, and only then renamed. A file that already exists is never replaced (the same
+  content is recognised as already there; different content is reported and kept). **Nothing is ever deleted** from the second location (`--keep` only prunes the primary one).
+* If the location is not there (drive unplugged) or not writable: the primary backup still counts and is complete, the second copy is reported as `unavailable`, and the command
+  exits with code **3** (so Task Scheduler shows it). A refused or failed second copy exits 3 as well. Exit 0 means primary AND second copy verified.
+* Every run appends a dated line to `backup.log` next to the primary backups: `OK <db> <file> <size> sha256=... second=verified|unavailable|failed dir=...`.
+* **Recovery from the second copy** is tested: `npm run db:restore -- --file "E:\Copia externa\<dump>" --target <new_db>` checks the SHA-256 against the summary copied next to it and
+  compares rows, migrations and schema; a corrupted copy is refused with `CHECKSUM` and no database is left behind.
+* **Privacy and protection of backups.** A backup holds the whole database: customers' purchases, users' names and the PIN hashes (old accounts may still carry an unsalted SHA-256 hash
+  until they log in once). Keep the external media encrypted (BitLocker To Go) or physically controlled, never share the folder, never put it in Git, and remember that the
+  primary backups are also on the PC. There is no off-site/cloud copy by design.
+
 ### Scheduling (Windows Task Scheduler)
 
 `scripts/db-backup-task.cmd` runs a daily-labelled backup, keeps 14, and appends the output to `task.log` in the backup folder.
@@ -79,8 +111,7 @@ schtasks /Run /TN "Beauty POS backup"
 
 Requirements: Node.js on the machine, the project folder with `node_modules`, `.env` with `DATABASE_URL`, and the PostgreSQL
 client tools (`pg_dump`/`pg_restore`; or set `POS_PG_BIN`). Check `task.log` and `backup.log` regularly: a failed run is
-logged as `FALLO` and Task Scheduler shows a non-zero result. **Copy the backup folder to a second location** (external
-drive or cloud sync): a backup on the same disk does not survive the disk.
+logged as `FALLO` and Task Scheduler shows a non-zero result. **Use the second copy** (see above): a backup on the same disk does not survive the disk.
 
 ### Restoring (always into a NEW database)
 
@@ -108,8 +139,9 @@ the POS, and check the data. **Keep the old database** until you are sure; delet
 
 ## Credentials and least privilege
 
-* Packaged app: `DATABASE_URL` in the environment, or `%APPDATA%\Beauty POS\config.json` (see `docs/PACKAGING.md`).
-  **`config.json` stores the password in clear text**: any process running as that Windows user can read it.
+* Packaged app: `DATABASE_URL` in the environment, or `%APPDATA%\Beauty POS\config.json` (see `docs/PACKAGING.md`). Since Sprint 06 the password in `config.json`
+  is **encrypted with Windows (safeStorage / DPAPI), bound to the Windows user**, written by the first-run setup window; a legacy plain-text file is upgraded in place.
+  Copying the file or the profile to another user or PC does not work. Any process running AS that Windows user can still use the application's connection: that is why the role below matters.
 * Because the app no longer migrates, its runtime connection does not need to own or alter anything. Create a login that can only
   read and write data:
 
@@ -123,9 +155,10 @@ npm run db:roles -- --role pos_runtime --apply --confirm-database=<database-name
   After every migration run `npm run db:roles -- --role pos_runtime --regrant --confirm-database=<name>` so new tables are covered.
   The role **cannot** create/alter/drop tables, truncate, forge or edit migration rows, or create roles/databases (verified by
   `OPS-07` and, with the packaged app, `PK-14`). The tool never alters a role it did not create and never takes the password from the command line.
-* Safer storage for the password (not implemented yet): keep it encrypted with Windows (DPAPI, through Electron `safeStorage`) instead of
-  plain text, written by an administrator tool; or use a Windows-authenticated PostgreSQL connection. Until then, protect the
-  user profile folder and never reuse a shared password.
+* The setup window checks the role it is given: a superuser, a role that can create databases or roles, or an owner of tables gets a warning (it can still be saved, the operator decides).
+  The administrator's `postgres` password and the owner login are for `db:migrate`, `db:backup`, `db:restore` and `db:roles` only; they are never typed into the application.
+* The PIN-attempt counter (login and administrator authorization share it) is persisted in `%APPDATA%\Beauty POS\auth-limiter.json` (three numbers, no PIN or user); deleting it
+  resets the counter, which is a limit of any local file: the real defences are PostgreSQL's own protection and the Windows account.
 
 ## Databases that must never be used by tests
 

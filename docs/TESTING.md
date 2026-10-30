@@ -38,11 +38,15 @@ database is ever written to, overwritten or dropped.
 | `npm run test:safety` | legacy sales channels visibility, checkout idempotency (lines compared), connection loss and recovery, safe errors | yes |
 | `npm run test:cash` | register history and closing summaries (cash/card, income/withdrawal, +/- difference, restart, roles, print/export without writes) | yes |
 | `npm run test:refunds` | authorized refunds through IPC: cash/card, administrator PIN (wrong/seller/inactive/legacy), confirmation, tampering, closed register, no funds, partial/complete/excess, idempotency, double click, concurrency, rollback by injected failure, pending returns, legacy, reconciliation of the ledger and the register | yes |
-| `npm run test:refundauth` | brute-force protection of the administrator PIN with a small real limit: lock, recovery, parallel burst, a login does not reset it, survives a change of user | yes |
+| `npm run test:refundauth` | brute-force protection of the administrator PIN with a small real limit: lock, recovery, parallel burst, a login does not reset it, the budget is shared with the login (failed logins lock the authorization and vice versa) | yes |
 | `npm run test:refundui` | the Devoluciones screen end to end (method, confirmation, PIN dialog, session unchanged, pending payment, filters, voucher, unsure outcome warning), dashboard/reports/cash history/closing summary reconcile, persistence after restarting the app | yes |
+| `npm run test:loginsec` | simulated brute force on the PIN login: alternating guesses and own logins, parallel bursts, no enumeration, restart persistence, tampered/corrupt counter file, legacy and scrypt PINs, shared budget with the administrator authorization | yes |
+| `npm run test:setup` | first-run setup window, protected `config.json` (real DPAPI), legacy plain-text upgrade, no plain-text fallback, undecryptable password, first administrator, schema never migrated, `--reconfigure` | yes |
+| `npm run test:pilot` | one complete store day on a NEW database through the real window (25 steps, see docs/PILOT_CHECKLIST.md), backup with second copy, restore, comparison, and the 1024x768 visual review | yes |
+| `npm run test:legacy` | restores the newest validated backup of the owner's data into a NEW database, applies 0007-0009 with the explicit commands, proves the old data survived and runs the packaged app on it (SKIP, never PASS, when there is no backup or no package) | yes + package |
 | `npm run test:migrations` | migrations from empty and legacy DBs (0007/0008/0009), precheck, drift, the app only verifies the schema (empty / behind / newer / unreachable), the explicit `db:migrate` command | yes |
 | `npm run test:ops` | verified backups, restore into a new database (row-by-row comparison), retention, safe errors, Task Scheduler wrapper, least-privilege role | yes |
-| `npm run test:all` | unit + every Electron suite + migrations + ops | yes |
+| `npm run test:all` | unit + every Electron suite + migrations + ops + legacy | yes |
 | `npm run db:precheck` | read-only pre-flight for the integrity migrations (see below) | DB only |
 
 ## Reading results
@@ -66,7 +70,9 @@ Statuses: `PASS`, `FAIL`, `KNOWN_FAIL`, `UNEXPECTED_PASS`, `SKIP`, `WARN`.
 | `E2E_LEGACY_DUMP` | path of a `pg_dump -Fc` of a legacy database for the upgrade test (`SKIP` if missing) |
 | `PG_BIN` | PostgreSQL `bin` folder (for `pg_restore`) |
 | `E2E_DATABASE_URL` | alternative local server/credentials for the tests |
-| `POS_LOGIN_MAX_ATTEMPTS`, `POS_LOGIN_LOCK_MS`, `POS_LOGIN_MAX_LOCK_MS` | login limiter limits, honored **only in development builds** (ignored when packaged) |
+| `POS_LOGIN_MAX_ATTEMPTS`, `POS_LOGIN_LOCK_MS`, `POS_LOGIN_MAX_LOCK_MS`, `POS_LOGIN_RESET_MS` | PIN limiter limits (attempts, lock, maximum lock, quiet period that forgets failures), honored **only in development builds** (ignored when packaged). A success never gives attempts back, so the suites wait for the quiet period instead of "logging in to reset" |
+| `POS_USE_CONFIG_FILE=1`, `POS_SETUP_NO_RELAUNCH=1`, `POS_TEST_CIPHER_UNAVAILABLE=1` | development-only knobs for the setup tests: use `config.json` instead of `.env`, quit instead of relaunching after saving, simulate a machine without protected storage (ignored when packaged) |
+| `E2E_BACKUP_DIR` | folder with the validated backups used by `test:legacy` (default `%USERPROFILE%\Backups\beauty-pos`) |
 
 ## Applying migrations to an existing database
 

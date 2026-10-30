@@ -538,7 +538,7 @@ export default function ReturnsPage() {
                               Registrar pago pendiente
                             </Button>
                           )}
-                          <Button size="sm" variant="outline" aria-label={`Comprobante de la devolución ${r.id}`} onClick={() => setVoucherId(r.id)}>
+                          <Button size="sm" variant="outline" className="h-10 w-10 p-0" aria-label={`Comprobante de la devolución ${r.id}`} onClick={() => setVoucherId(r.id)}>
                             <FileText size={16} />
                           </Button>
                         </td>

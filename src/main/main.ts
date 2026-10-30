@@ -108,6 +108,13 @@ app.on("ready", async () => {
   denyAllPermissions();
   if (!isDev) Menu.setApplicationMenu(null);
 
+  // "Beauty POS.exe --reconfigure" opens the setup window even when the stored connection works (to point the app at another
+  // database, for example a restored copy). A DATABASE_URL in the environment is the operator's own and is never overridden here.
+  if (process.argv.includes("--reconfigure") && !process.env.DATABASE_URL) {
+    showSetupWindow("Reconfigurar la conexión a la base de datos", "Cambia la conexión y guarda: la aplicación se reiniciará con ella. Escribe la contraseña de nuevo (nunca se muestra la guardada).");
+    return;
+  }
+
   const { dbConfig } = await import("../backend/db");
 
   if (!dbConfig.ok) {

@@ -208,7 +208,7 @@ export async function launchApp(runDb, db, artifacts, extraEnv = {}, opts = {}) 
   const userData = opts.userData ?? fs.mkdtempSync(path.join(os.tmpdir(), "pos-e2e-ud-"));
   const app = await _electron.launch({
     executablePath: path.join(ROOT, "node_modules/electron/dist/electron.exe"),
-    args: [".", "--user-data-dir=" + userData], cwd: ROOT, env, timeout: 60000,
+    args: [".", "--user-data-dir=" + userData, ...(opts.extraArgs ?? [])], cwd: ROOT, env, timeout: 60000,
   });
   const mainLog = [];
   const proc = app.process();
