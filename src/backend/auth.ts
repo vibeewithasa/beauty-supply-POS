@@ -12,6 +12,7 @@ import { AuthError, BusinessError } from "./errors";
 import { describeUnexpected, guarded } from "./ipc-errors";
 import { PIN_LOGIN_RE, hashPin, isLegacyHash, verifyPin } from "./pin-hash";
 import { LoginLimiter, loadLimiterConfig } from "./login-limiter";
+import { Gate, authorizeAdminPin } from "./admin-authorization";
 import type { Role } from "../common/types";
 
 export type SessionUser = { id: number; name: string; role: Role };
@@ -29,6 +30,9 @@ const store = new SessionStore();
 // One limiter for the whole installation (the PIN space is tiny): another window cannot reset it.
 // POS_LOGIN_* overrides are honored only in development builds, never in a packaged app.
 const limiter = new LoginLimiter(loadLimiterConfig(app.isPackaged ? {} : process.env));
+// PIN attempts (login and administrator authorization) are checked one at a time: a burst of parallel requests must not
+// all pass the "not locked" check before the first failure has been counted.
+const attemptGate = new Gate();
 
 const guardOptions = (): GuardOptions => ({
   packaged: app.isPackaged,
@@ -123,6 +127,31 @@ async function upgradeLegacyHash(userId: number, oldHash: string, pin: string) {
   }
 }
 
+/**
+ * Authorizes ONE operation with the PIN of an active administrator (the operator's session is not touched).
+ * The PIN is checked here, in main, against the users table; the renderer never names the administrator.
+ * Returns only the administrator's id. Shares the installation-wide attempt limiter with the login.
+ */
+export async function authorizeAdmin(pin: unknown, operatorId: number): Promise<{ adminId: number }> {
+  return authorizeAdminPin(
+    {
+      limiter,
+      gate: attemptGate,
+      loadActiveUsers: () =>
+        db
+          .select({ id: usersTable.id, role: usersTable.role, pinHash: usersTable.pinHash })
+          .from(usersTable)
+          .where(eq(usersTable.active, true)),
+      verify: verifyPin,
+      onAuthorized: async (admin, p) => {
+        if (isLegacyHash(admin.pinHash)) await upgradeLegacyHash(admin.id, admin.pinHash, p);
+      },
+      onRejected: () => console.warn(`[auth] administrator authorization rejected (operator=${operatorId})`),
+    },
+    pin
+  );
+}
+
 /** Public channels: auth:login, auth:me, auth:logout (same error boundary as the protected ones). */
 export function registerAuthHandlers() {
   const publicHandle = <R>(channel: string, fn: (event: IpcMainInvokeEvent, ...args: unknown[]) => Promise<R> | R) =>
@@ -132,6 +161,10 @@ export function registerAuthHandlers() {
 
   publicHandle("auth:login", async (event, pin) => {
     assertTrustedSender(event);
+    return attemptGate.run(() => attemptLogin(event, pin));
+  });
+
+  const attemptLogin = async (event: IpcMainInvokeEvent, pin: unknown) => {
     const state = limiter.check();
     if (state.locked) {
       // generic about users, explicit about the lock; even a correct PIN is refused while locked
@@ -159,7 +192,7 @@ export function registerAuthHandlers() {
     if (isLegacyHash(user.pinHash)) await upgradeLegacyHash(user.id, user.pinHash, pin);
     store.start(event.sender, user.id, trustedUrl);
     return { id: user.id, name: user.name, role: user.role };
-  });
+  };
 
   publicHandle("auth:me", async (event) => {
     assertTrustedSender(event);
