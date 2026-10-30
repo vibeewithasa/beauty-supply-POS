@@ -1,4 +1,4 @@
-export type JournalEntry = { idx: number; tag: string; when: number; hash: string };
+export type JournalEntry = { idx: number; tag: string; when: number; hash: string; hashes?: string[] };
 export type SchemaState = {
   status: "ok" | "missing" | "newer" | "uninitialized";
   required: number;

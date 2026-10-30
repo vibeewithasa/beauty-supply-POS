@@ -173,3 +173,7 @@ is used by the tests only to find the local server and its credentials. Run the 
 * The administrative commands are Node scripts: a store machine that has only the installed app needs the project's `scripts`
   folder and Node.js (or an operator who does). Bundling them with the installer is future work.
 * Backups are as good as their second copy; there is no cloud/off-site step here.
+* **Line endings of the migrations.** drizzle records the SHA-256 of each migration file's bytes, so the same migration checked out with LF or with CRLF (Windows `core.autocrlf=true`)
+  has two hashes. The startup check recognises a migration by its raw, LF and CRLF hashes (only line endings are normalised: any other edit is still refused), and `.gitattributes`
+  keeps `drizzle/*.sql` and `drizzle/meta/*.json` as LF on every checkout. This was found by the final validation (a copy of the real data was suddenly "behind" after a fresh checkout
+  produced CRLF files) and is covered by unit tests and by `test:legacy`.
