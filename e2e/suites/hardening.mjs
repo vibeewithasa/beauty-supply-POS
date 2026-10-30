@@ -4,7 +4,8 @@
 import path from "node:path";
 import { ROOT, APP_URL, ui, ipc, expect, verifyModern, isModernHash, containsSecret, connectRunDb, waitFor, sleep } from "../lib/harness.mjs";
 
-export const env = { POS_LOGIN_MAX_ATTEMPTS: "3", POS_LOGIN_LOCK_MS: "5000", POS_LOGIN_MAX_LOCK_MS: "5000" };
+// RESET_MS: a quiet period of 9 s forgets the failures (the real one is 15 min). A success gives nothing back.
+export const env = { POS_LOGIN_MAX_ATTEMPTS: "3", POS_LOGIN_LOCK_MS: "5000", POS_LOGIN_MAX_LOCK_MS: "5000", POS_LOGIN_RESET_MS: "9000" };
 const LOCK_MS = 5000;
 // Keep in sync with USER_ADMIN_LOCK_KEY in src/backend/users-service.ts (if they drift, the race test fails loudly)
 const USER_ADMIN_LOCK_KEY = 7481201;
@@ -33,10 +34,18 @@ export async function run(c) {
   const biz = (r, code) => r.ok === false && String(r.err).includes(`[${code}]`) && !LEAKS_SQL.test(String(r.err));
   const settled = (calls) => call(`Promise.allSettled([${calls.join(",")}]).then(rs => rs.map(x => ({ ok: x.status === 'fulfilled', err: x.reason && x.reason.message })))`);
   const admin = await data.user("ADMIN", "admin");
-  const login = (pin, p = page) => call(`api.auth.login(${J(pin)})`, p);
+  const RESET_MS = 9000;
+  let lastFail = 0; // when the last failed (or refused) attempt happened: the counter is only forgotten after a quiet period
+  const login = async (pin, p = page) => {
+    const r = await call(`api.auth.login(${J(pin)})`, p);
+    if (!(r.ok && r.v && r.v.id)) lastFail = Date.now();
+    return r;
+  };
   const closeAll = async () => { for (const r of await rows("select id from cash_sessions where closed_at is null")) await call(`api.cash.closeSession(${r.id},0)`); };
-  /** waits out any lock and logs the admin in through the API (a success resets the limiter) */
+  /** waits for the quiet period that forgets failures (a success does NOT) and logs the admin in through the API */
   const recover = async () => {
+    const wait = lastFail + RESET_MS + 400 - Date.now();
+    if (wait > 0) await sleep(wait);
     for (let i = 0; i < 12; i++) {
       const r = await login(admin.pin);
       if (r.ok && r.v && r.v.id === admin.id) return;
@@ -205,12 +214,13 @@ export async function run(c) {
     const a = await login(unknown), b = await login(inactive.pin);
     expect(a.ok && a.v === null && b.ok && b.v === null && J(a) === J(b), "unknown PIN and a deactivated user's PIN look exactly the same: " + J([a, b]));
     await recover();
-    const c1 = await call("api.auth.login(1234)"), c2 = await call("api.auth.login(null)");
+    const c1 = await login(1234), c2 = await login(null);
     expect(c1.ok && c1.v === null && c2.ok && c2.v === null, "non-string input is just a failure");
     await recover();
     await resetToLogin();
     await ui.login(page, unknown);
     await page.getByText("PIN incorrecto").waitFor({ timeout: 5000 });
+    lastFail = Date.now();
     await recover();
   });
   await test("LOG-03.lock_after_repeated_failures_refuses_even_the_right_pin", "security", async () => {
@@ -224,6 +234,7 @@ export async function run(c) {
     // the screen explains it without revealing anything about users
     await resetToLogin();
     await ui.login(page, admin.pin);
+    lastFail = Date.now();
     await page.getByText(/Demasiados intentos/).first().waitFor({ timeout: 4000 });
     expect(!(await page.evaluate(() => sessionStorage.getItem("user"))), "no session was created while locked");
   });
@@ -238,13 +249,15 @@ export async function run(c) {
       expect(biz(await login(admin.pin), "LOGIN_BLOQUEADO"), "window 1 is locked too");
     } finally { await w2.close().catch(() => {}); }
   });
-  await test("LOG-05.login_recovers_after_the_lock_and_a_success_resets_the_counter", "security", async () => {
+  await test("LOG-05.login_recovers_after_the_lock_but_a_success_gives_no_attempts_back", "security", async () => {
     await sleep(LOCK_MS + 300);
     const ok = await login(admin.pin);
-    expect(ok.ok && ok.v && ok.v.id === admin.id, "the correct PIN works again after the lock period: " + J(ok));
-    expect((await login(await data.newPin())).v === null && (await login(await data.newPin())).v === null, "two failures");
-    expect((await login(admin.pin)).v?.id === admin.id, "a success resets the counter");
-    expect((await login(await data.newPin())).v === null && (await login(await data.newPin())).v === null, "two more failures are not a lock");
+    expect(ok.ok && ok.v && ok.v.id === admin.id, "the correct PIN works again after the lock period (the lock ended by itself): " + J(ok));
+    // the three failures of LOG-04 are still counted (the quiet period has not passed): one more locks again, in spite of the success
+    expect((await login(await data.newPin())).v === null, "one more failure");
+    expect(biz(await login(admin.pin), "LOGIN_BLOQUEADO"), "locked again at once: signing in did not give the attempts back");
+    await recover();
+    expect((await login(await data.newPin())).v === null && (await login(await data.newPin())).v === null, "after a quiet period the counter starts from zero: two failures are not a lock");
     expect((await login(admin.pin)).v?.id === admin.id, "and the PIN still works");
   });
 

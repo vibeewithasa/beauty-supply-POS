@@ -2,16 +2,29 @@ import { app } from "electron";
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { resolveDatabaseUrl } from "./db-config";
+import { configFilePath } from "./config-path";
+import { upgradeLegacyConfig } from "./config-store";
+import { safeCipher } from "./safe-cipher";
 
-// The connection string is resolved here, once, and never baked into the package (see db-config.ts).
+// The connection string is resolved here, once, and never baked into the package (see db-config.ts). The password in
+// config.json is protected by Windows (safeStorage/DPAPI, see config-store.ts). IMPORTANT: this module must only be imported
+// AFTER the app is ready (main.ts imports it dynamically): safeStorage cannot decrypt before that.
+const configFile = configFilePath();
 export const dbConfig = resolveDatabaseUrl({
   env: process.env,
   packaged: app.isPackaged,
   userDataDir: app.getPath("userData"),
   cwd: process.cwd(),
+  cipher: safeCipher,
 });
 if (dbConfig.ok) {
   process.env.DATABASE_URL = dbConfig.url; // so error redaction knows the secret even when it came from config.json
+  if (dbConfig.legacyPlaintext) {
+    // an older plain-text config.json: protect it in place (verified, same connection) as soon as Windows allows it
+    const r = upgradeLegacyConfig(configFile, safeCipher);
+    if (r.status === "upgraded") console.log("CONFIG_UPGRADED: config.json now stores the password protected by Windows");
+    else if (r.status === "kept-plaintext") console.error(`CONFIG_PLAINTEXT_KEPT: config.json still holds a plain-text password (${r.reason}); reconfigure the connection from the setup window`);
+  }
 } else {
   console.error("DB_CONFIG_ERROR:", dbConfig.reason);
 }

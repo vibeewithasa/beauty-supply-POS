@@ -6,8 +6,10 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { ROOT, APP_URL, ui, ipc, expect, sha256, hashModern, verifyModern, isModernHash, containsSecret, urlFor, sleep } from "../lib/harness.mjs";
 
-export const env = { POS_LOGIN_MAX_ATTEMPTS: "3", POS_LOGIN_LOCK_MS: "4000", POS_LOGIN_MAX_LOCK_MS: "4000" };
+// A success gives no attempts back: failures are forgotten after a quiet period (9 s here, 15 min in production).
+export const env = { POS_LOGIN_MAX_ATTEMPTS: "3", POS_LOGIN_LOCK_MS: "4000", POS_LOGIN_MAX_LOCK_MS: "4000", POS_LOGIN_RESET_MS: "9000" };
 const LOCK_MS = 4000;
+const RESET_MS = 9000;
 const LEAKS = /Failed query|params:|\n\s+at |scrypt\$/i;
 
 export async function run(c) {
@@ -19,10 +21,17 @@ export async function run(c) {
   const biz = (r, code) => r.ok === false && String(r.err).includes(`[${code}]`) && !LEAKS.test(String(r.err));
   const settled = (calls) => call(`Promise.allSettled([${calls.join(",")}]).then(rs => rs.map(x => ({ ok: x.status === 'fulfilled', err: x.reason && x.reason.message })))`);
   const admin = await data.user("ADMIN", "admin", { modern: true });
-  const login = (pin) => call(`api.auth.login(${J(pin)})`);
+  let lastFail = 0;
+  const login = async (pin) => {
+    const r = await call(`api.auth.login(${J(pin)})`);
+    if (!(r.ok && r.v && r.v.id)) lastFail = Date.now();
+    return r;
+  };
   const hashOf = async (id) => (await one("select pin_hash from users where id=$1", [id])).pin_hash;
   const createUser = (name, role, pin) => call(`api.users.create(${J({ name, role, pin })})`);
   const recover = async () => {
+    const wait = lastFail + RESET_MS + 400 - Date.now(); // the quiet period forgets failures; a success does not
+    if (wait > 0) await sleep(wait);
     for (let i = 0; i < 14; i++) {
       const r = await login(admin.pin);
       if (r.ok && r.v && r.v.id === admin.id) return;
