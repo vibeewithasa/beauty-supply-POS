@@ -3,7 +3,7 @@
 // the snapshot is written by the real checkout. Reprinting is checked here only as "never creates a sale" (the
 // printing path itself is covered by the receipts suite).
 import fs from "node:fs";
-import { APP_URL, ui, ipc, expect, closeStrayCash, launchApp } from "../lib/harness.mjs";
+import { APP_URL, ui, ipc, expect, closeStrayCash, launchApp, waitFor } from "../lib/harness.mjs";
 
 export async function run(c) {
   const { db, data, test, runDb, artifacts } = c;
@@ -114,6 +114,9 @@ export async function run(c) {
     for (let p = 2; p <= pages; p++) {
       await page.getByRole("button", { name: "Siguiente" }).click();
       await summary().getByText(new RegExp(`Página ${p} de ${pages}`)).waitFor();
+      // the page label changes before the rows do: wait until the table shows rows that are not the previous page's (a REAL
+      // repetition across pages would never get here and fails below)
+      await waitFor(async () => { const ids = await folios(); return ids.length > 0 && ids.every((id) => !seen.has(id)); }, 8000);
       for (const id of await folios()) { expect(!seen.has(id), "no sale repeated across pages: " + id); seen.add(id); }
     }
     expect(seen.size === total, `every one of the ${total} sales was reached by paging (${seen.size})`);
