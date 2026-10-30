@@ -60,6 +60,10 @@ const CALLS = {
   "receipts:listPrinters": "api.receipts.listPrinters()",
   "settings:getBusiness": "api.settings.getBusiness()",
   "settings:updateBusiness": "api.settings.updateBusiness({name:'x'})",
+  "cash:listSessions": "api.cash.listSessions({page:1})",
+  "cash:getSessionSummary": "api.cash.getSessionSummary(999999)",
+  "cash:previewSummary": "api.cash.previewSummary(999999)",
+  "cash:printSummary": "api.cash.printSummary(999999)",
 };
 const ADMIN_ONLY = [
   "products:create", "products:update", "products:softDelete", "users:getAll", "users:create", "users:update",
@@ -70,6 +74,7 @@ const ADMIN_ONLY = [
 const VENDOR_READS = [
   "products:getAll", "products:findBySkuOrBarcode", "cash:getActiveSession", "cash:getMovements", "sales:getAll",
   "sales:getById", "returns:getAll", "returns:getSaleForReturn", "sales:list", "sales:getDetail", "receipts:preview", "receipts:print",
+  "cash:listSessions", "cash:getSessionSummary", "cash:previewSummary", "cash:printSummary",
 ];
 
 export async function run(c) {
@@ -95,7 +100,7 @@ export async function run(c) {
   await test("A2.public_me_without_session_is_null", "security", async () => {
     expect((await me()) === null, "me() must be null before login");
   });
-  await test("A3.all_36_protected_channels_rejected_without_session", "security", async () => {
+  await test("A3.all_40_protected_channels_rejected_without_session", "security", async () => {
     const before = await userCount();
     const leaks = [];
     for (const [ch, expr] of Object.entries(CALLS)) { const r = await ipc(page, expr); if (!unauthenticated(r)) leaks.push(`${ch}:${r.ok ? "ALLOWED" : r.err}`); }
@@ -114,7 +119,7 @@ export async function run(c) {
   await test("B2.vendor_allowed_operations_work", "security", async () => {
     const bad = [];
     // returns:getSaleForReturn(999999) reaches its handler and answers a business error (the sale does not exist)
-    for (const ch of VENDOR_READS) { const r = await ipc(page, CALLS[ch]); if (!r.ok && !/\[VENTA_NO_ENCONTRADA\]/.test(r.err)) bad.push(ch + ":" + r.err); }
+    for (const ch of VENDOR_READS) { const r = await ipc(page, CALLS[ch]); if (!r.ok && !/\[(VENTA_NO_ENCONTRADA|CAJA_NO_ENCONTRADA)\]/.test(r.err)) bad.push(ch + ":" + r.err); }
     expect(bad.length === 0, bad.join(" | "));
   });
   await test("B3.vendor_rejected_on_all_19_admin_channels", "security", async () => {

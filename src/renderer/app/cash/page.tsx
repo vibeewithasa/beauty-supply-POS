@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { POSLayout } from "@/components/pos-layout";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -12,7 +12,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus } from "lucide-react";
+import { History, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { describeIpcError } from "@/lib/ipc-error";
 
@@ -48,6 +48,8 @@ export default function CashPage() {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<CashSession | null>(null);
   const [movements, setMovements] = useState<CashMovement[]>([]);
+  // structured totals of the open session (sales by method come from the sales rows, not from the movement text)
+  const [summary, setSummary] = useState<any>(null);
   const [showOpenDialog, setShowOpenDialog] = useState(false);
   const [showMovementDialog, setShowMovementDialog] = useState(false);
   const [showCloseDialog, setShowCloseDialog] = useState(false);
@@ -75,10 +77,12 @@ export default function CashPage() {
       const sessionData = await window.api.cash.getActiveSession();
       if (sessionData) {
         setSession(sessionData);
-        const movementsData = await window.api.cash.getMovements(
-          sessionData.id
-        );
+        const [movementsData, summaryData] = await Promise.all([
+          window.api.cash.getMovements(sessionData.id),
+          window.api.cash.getSessionSummary(sessionData.id),
+        ]);
         setMovements(movementsData);
+        setSummary(summaryData);
       }
     } catch (error) {
       console.error("Error loading cash data:", error);
@@ -102,19 +106,9 @@ export default function CashPage() {
   const currentAmount = session ? parseFloat(session.currentAmount) : 0;
   const initialAmount = session ? parseFloat(session.initialAmount) : 0;
 
-  // Calcular ventas en efectivo y tarjeta
-  const salesCash = movements
-    .filter((m) => m.reason.includes("Venta") && m.reason.includes("Efectivo"))
-    .reduce((sum, m) => sum + parseFloat(m.amount), 0);
-
-  // Extraer monto de ventas con tarjeta del texto del reason
-  const salesCard = movements
-    .filter((m) => m.reason.includes("Tarjeta"))
-    .reduce((sum, m) => {
-      // Extraer el monto del texto "Venta #X - Tarjeta ($XX.XX)"
-      const match = m.reason.match(/\$([0-9.]+)\)/);
-      return sum + (match ? parseFloat(match[1]) : 0);
-    }, 0);
+  // Ventas por método: tomadas de las ventas de la sesión (no del texto de los movimientos)
+  const salesCash = summary ? parseFloat(summary.sales.cash.total) : 0;
+  const salesCard = summary ? parseFloat(summary.sales.card.total) : 0;
 
   const handleOpenCash = async () => {
     if (!user) return;
@@ -156,13 +150,15 @@ export default function CashPage() {
       });
 
       // Reload session and movements to get updated data with user names
-      const [updatedSession, updatedMovements] = await Promise.all([
+      const [updatedSession, updatedMovements, updatedSummary] = await Promise.all([
         window.api.cash.getActiveSession(),
         window.api.cash.getMovements(session.id),
+        window.api.cash.getSessionSummary(session.id),
       ]);
 
       if (updatedSession) setSession(updatedSession);
       setMovements(updatedMovements);
+      setSummary(updatedSummary);
 
       setMovementAmount("");
       setMovementReason("");
@@ -215,7 +211,15 @@ export default function CashPage() {
   return (
     <POSLayout>
       <div className="p-4 md:p-6">
-        <h1 className="text-2xl md:text-3xl font-bold mb-8">Gestión de Caja</h1>
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+          <h1 className="text-2xl md:text-3xl font-bold">Gestión de Caja</h1>
+          <Link to="/cash/history">
+            <Button variant="outline" className="gap-2 h-11">
+              <History size={18} />
+              Historial de sesiones
+            </Button>
+          </Link>
+        </div>
 
         {!session ? (
           <Card className="card-pos-stat max-w-md mx-auto">

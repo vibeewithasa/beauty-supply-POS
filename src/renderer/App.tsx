@@ -11,6 +11,7 @@ import UsersPage from "./app/users/page";
 import StockPage from "./app/stock/page";
 import ReceivePage from "./app/receive/page";
 import HistoryPage from "./app/history/page";
+import CashHistoryPage from "./app/cash-history/page";
 import SettingsPage from "./app/settings/page";
 
 interface User {
@@ -176,6 +177,14 @@ function App() {
         element={
           <ProtectedRoute>
             <HistoryPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/cash/history"
+        element={
+          <ProtectedRoute>
+            <CashHistoryPage />
           </ProtectedRoute>
         }
       />

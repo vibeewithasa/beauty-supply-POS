@@ -183,6 +183,7 @@ async function createSaleTx(userId: number, input: ReturnType<typeof parseSaleIn
         type: "IN",
         amount: total,
         reason: `Venta #${sale.id} - Efectivo`,
+        saleId: sale.id, // structured link: summaries never have to read amounts out of the reason text
         userId,
       });
     } else {
@@ -192,6 +193,7 @@ async function createSaleTx(userId: number, input: ReturnType<typeof parseSaleIn
         type: "IN",
         amount: "0.00",
         reason: `Venta #${sale.id} - Tarjeta ($${total})`,
+        saleId: sale.id,
         userId,
       });
     }

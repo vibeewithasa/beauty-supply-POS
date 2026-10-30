@@ -57,7 +57,7 @@ export async function run(c) {
   const closeAll = async () => { for (let i = 0; i < 5; i++) { if ((await page.getByRole("dialog").count()) + (await page.getByRole("alertdialog").count()) === 0) return; await page.keyboard.press("Escape"); await page.waitForTimeout(300); } };
   const smallReport = new Map();
 
-  const ROUTES = [["sales", "Punto de Venta"], ["cash", null], ["history", "Historial de ventas"], ["inventory", "Gestión de Productos"], ["receive", null], ["stock", "Consultar Stock"], ["returns", "Devoluciones"], ["dashboard", null], ["reports", "Reportes"], ["users", null], ["settings", "Configuración comercial"]];
+  const ROUTES = [["sales", "Punto de Venta"], ["cash", null], ["cash/history", "Historial de caja"], ["history", "Historial de ventas"], ["inventory", "Gestión de Productos"], ["receive", null], ["stock", "Consultar Stock"], ["returns", "Devoluciones"], ["dashboard", null], ["reports", "Reportes"], ["users", null], ["settings", "Configuración comercial"]];
 
   await test("UX-00.admin_login_by_keyboard", "e2e", async () => {
     await page.goto(APP_URL);
@@ -77,7 +77,7 @@ export async function run(c) {
         await page.waitForTimeout(700);
         await page.locator("main").waitFor();
         const m = await measure();
-        await shot(route, w, h);
+        await shot(route.replace("/", "-"), w, h);
         if (m.hscroll > 1) problems.push(`${route}: horizontal page overflow ${m.hscroll}px`);
         if (m.clipped.length) problems.push(`${route}: clipped tables ${J(m.clipped)}`);
         if (m.h1 < 1) problems.push(`${route}: no h1`);

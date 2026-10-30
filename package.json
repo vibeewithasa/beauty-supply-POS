@@ -35,6 +35,7 @@
     "test:receipts": "node e2e/run.mjs receipts",
     "test:ux": "node e2e/run.mjs ux",
     "test:safety": "node e2e/run.mjs safety",
+    "test:cash": "node e2e/run.mjs cash",
     "test:migrations": "node e2e/migrations.mjs",
     "test:all": "npm run test:unit && node e2e/run.mjs all && node e2e/migrations.mjs && node e2e/ops.mjs",
     "package:dir": "npm run build && electron-builder --win dir",

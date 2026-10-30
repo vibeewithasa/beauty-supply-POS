@@ -18,6 +18,8 @@ import { getSaleDetail } from "./sales-history";
 import type { Viewer } from "./sales-history";
 import { getBusinessSettings } from "./settings-service";
 import { renderReceiptHtml } from "./receipt";
+import { renderCashReportHtml } from "./cash-report";
+import { getCashSessionSummary } from "./cash-summary";
 import type { ReceiptData } from "./receipt";
 import type { PaperWidth } from "./settings-validation";
 
@@ -75,12 +77,16 @@ function testMode(): string | null {
   }
 }
 
-export async function printReceipt(viewer: Viewer, saleId: unknown, copy: unknown): Promise<PrintResult> {
+/**
+ * Prints (or, in development automation, renders to PDF / simulates cancel or failure) an already-built, escaped
+ * document. Shared by receipts and the cash summary. Writes nothing to the database.
+ */
+async function runPrint(html: string, width: PaperWidth, fileStem: string): Promise<PrintResult> {
   if (printing) throw new BusinessError("IMPRESION_EN_CURSO", "Ya hay una impresión en curso");
   printing = true;
   let win: BrowserWindow | null = null;
   try {
-    const { html, width, folio, settings } = await build(viewer, saleId, copy);
+    const settings = await getBusinessSettings();
     const mode = testMode();
     if (mode === "cancel") return { status: "cancelled", message: "Impresión cancelada" };
     if (mode === "fail") return { status: "failed", message: "No se pudo imprimir (simulado)" };
@@ -98,7 +104,7 @@ export async function printReceipt(viewer: Viewer, saleId: unknown, copy: unknow
         printBackground: false,
       });
       fs.mkdirSync(dir, { recursive: true });
-      const file = path.join(dir, `receipt-${folio}-${width}mm${copy === true ? "-copy" : ""}.pdf`);
+      const file = path.join(dir, `${fileStem}-${width}mm.pdf`);
       fs.writeFileSync(file, pdf);
       return { status: "printed", message: path.basename(file) };
     }
@@ -127,6 +133,29 @@ export async function printReceipt(viewer: Viewer, saleId: unknown, copy: unknow
     printing = false;
     if (win && !win.isDestroyed()) win.destroy();
   }
+}
+
+export async function printReceipt(viewer: Viewer, saleId: unknown, copy: unknown): Promise<PrintResult> {
+  const { html, width, folio } = await build(viewer, saleId, copy);
+  return runPrint(html, width, `receipt-${folio}${copy === true ? "-copy" : ""}`);
+}
+
+// ---------------------------------------------------------------- cash-register closing summary
+async function buildCashReport(viewer: Viewer, sessionId: unknown) {
+  const summary = await getCashSessionSummary(viewer, sessionId); // visibility rules + CAJA_NO_ENCONTRADA
+  const settings = await getBusinessSettings();
+  const width = settings.paperWidth as PaperWidth;
+  return { html: renderCashReportHtml(summary, settings.name, width), width, id: summary.session.id };
+}
+
+export async function previewCashSummary(viewer: Viewer, sessionId: unknown) {
+  const { html, width, id } = await buildCashReport(viewer, sessionId);
+  return { html, width, folio: id };
+}
+
+export async function printCashSummary(viewer: Viewer, sessionId: unknown): Promise<PrintResult> {
+  const { html, width, id } = await buildCashReport(viewer, sessionId);
+  return runPrint(html, width, `cash-summary-${id}`);
 }
 
 /** Installed printers (administrators only: used by the settings screen). */

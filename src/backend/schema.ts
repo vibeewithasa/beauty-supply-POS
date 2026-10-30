@@ -171,12 +171,19 @@ export const cashMovements = pgTable(
     type: cashMovementEnum("type").notNull(),
     amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
     reason: text("reason").notNull(),
+    // The sale that created this movement (NULL for manual income/withdrawals). Lets summaries tell them apart without
+    // reading the reason text; old rows are linked by migration 0008 only when sale, register and amount all agree.
+    saleId: integer("sale_id").references(() => sales.id),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),
   },
   // 0 is allowed: card sales are recorded as informational movements of amount 0.
-  (t) => [check("cash_movements_amount_non_negative", sql`${t.amount} >= 0`)]
+  (t) => [
+    check("cash_movements_amount_non_negative", sql`${t.amount} >= 0`),
+    index("cash_movements_sale_idx").on(t.saleId),
+    index("cash_movements_session_idx").on(t.sessionId),
+  ]
 );
 
 export const sales = pgTable(

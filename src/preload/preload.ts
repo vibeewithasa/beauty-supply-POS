@@ -39,6 +39,10 @@ contextBridge.exposeInMainWorld("api", {
     addMovement: (data: any) => invoke("cash:addMovement", data),
     getMovements: (sessionId: number) =>
       invoke("cash:getMovements", sessionId),
+    listSessions: (query?: any) => invoke("cash:listSessions", query),
+    getSessionSummary: (id: number) => invoke("cash:getSessionSummary", id),
+    previewSummary: (id: number) => invoke("cash:previewSummary", id),
+    printSummary: (id: number) => invoke("cash:printSummary", id),
   },
   sales: {
     create: (data: any) => invoke("sales:create", data),

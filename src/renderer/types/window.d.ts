@@ -30,6 +30,10 @@ declare global {
         closeSession(sessionId: number, realTotal: number): Promise<any>;
         addMovement(data: any): Promise<any>;
         getMovements(sessionId: number): Promise<any[]>;
+        listSessions(query?: any): Promise<any>;
+        getSessionSummary(id: number): Promise<any>;
+        previewSummary(id: number): Promise<{ html: string; width: "80" | "58"; folio: number }>;
+        printSummary(id: number): Promise<{ status: "printed" | "cancelled" | "failed"; message: string }>;
       };
       sales: {
         create(data: any): Promise<any>;

@@ -80,7 +80,7 @@ try {
     expect((await one(edb, "select count(*)::int n from pg_enum e join pg_type t on t.oid=e.enumtypid where t.typname='product_status' and e.enumlabel='deleted'")).n === 1, "enum value 'deleted'");
     expect((await one(edb, "select count(*)::int n from pg_constraint where connamespace='public'::regnamespace and not convalidated")).n === 0, "all constraints validated");
     const cnt = async (t) => (await one(edb, "select count(*)::int n from pg_constraint where connamespace='public'::regnamespace and contype=$1", [t])).n;
-    expect((await cnt("f")) === 10, "exactly 10 foreign keys, got " + (await cnt("f")));
+    expect((await cnt("f")) === 11, "exactly 11 foreign keys (10 + cash_movements.sale_id), got " + (await cnt("f")));
     expect((await cnt("c")) === 17, "exactly 17 CHECK constraints (14 + 3 on business_settings), got " + (await cnt("c")));
     expect((await one(edb, "select string_agg(e.enumlabel, ',' order by e.enumsortorder) v from pg_enum e join pg_type t on t.oid=e.enumtypid where t.typname='refund_status'")).v === "pending,paid,legacy_unspecified", "refund_status enum");
     expect((await one(edb, "select column_default d from information_schema.columns where table_name='returns' and column_name='refund_status'")).d.startsWith("'pending'"), "new returns default to pending");
@@ -88,10 +88,12 @@ try {
     expect((await one(edb, "select count(*)::int n from pg_indexes where indexname='sales_created_at_idx'")).n === 1, "sales are indexed by date for the paginated history");
     const cols = (await edb.query("select table_name||'.'||column_name c, is_nullable n from information_schema.columns where (table_name,column_name) in (('sales','operation_id'),('sale_items','product_name'),('sale_items','product_sku'))")).rows;
     expect(cols.length === 3 && cols.every((r) => r.n === "YES"), "0007 adds three NULLABLE columns (additive, no back-fill): " + JSON.stringify(cols));
+    const sl = await one(edb, "select is_nullable n, (select count(*)::int from pg_indexes where indexname in ('cash_movements_sale_idx','cash_movements_session_idx')) idx from information_schema.columns where table_name='cash_movements' and column_name='sale_id'");
+    expect(sl && sl.n === "YES" && sl.idx === 2, "0008 adds the NULLABLE cash_movements.sale_id and its indexes: " + JSON.stringify(sl));
     const bs = await one(edb, "select id, name, paper_width, silent_print, address, phone, whatsapp, tax_info, logo_data from business_settings");
     expect(bs && bs.id === 1 && bs.name === "Estética Leal" && bs.paper_width === "80" && bs.silent_print === false && [bs.address, bs.phone, bs.whatsapp, bs.tax_info, bs.logo_data].every((v) => v === null), "default settings row: name only, every optional field empty: " + JSON.stringify(bs));
     expect((await one(edb, "select count(*)::int n from pg_indexes where indexname in ('users_pin_hash_unique','return_items_return_sale_item_unique')")).n === 2, "unique PIN index and unique return line index");
-    return "10 foreign keys, 17 CHECK, 2 partial unique indexes, enum values 'deleted' and refund_status, 0007 additive columns and default settings row";
+    return "11 foreign keys, 17 CHECK, 2 partial unique indexes, enum values 'deleted' and refund_status, 0007 additive columns and default settings row";
   });
   await test("MIG-02.constraints_reject_bad_data_at_the_database_level", "migration", async () => {
     await edb.query("insert into users(name,pin_hash,role) values('m','x','admin')");
@@ -143,7 +145,7 @@ try {
       // Full-row hash per table (every column, including cash_sessions.status).
       const full = async () => {
         const o = {};
-        for (const t of tables) o[t] = (await ldb.query(`select count(*)::int n, md5(coalesce(string_agg((to_jsonb(x) - 'operation_id' - 'product_name' - 'product_sku')::text, '|' order by x.id),'')) m from "${t}" x`)).rows[0];
+        for (const t of tables) o[t] = (await ldb.query(`select count(*)::int n, md5(coalesce(string_agg((to_jsonb(x) - 'operation_id' - 'product_name' - 'product_sku' - 'sale_id')::text, '|' order by x.id),'')) m from "${t}" x`)).rows[0];
         return o;
       };
       const sessions = async () => (await ldb.query("select id, status, (closed_at is not null) as closed, to_jsonb(c) - 'status' as rest from cash_sessions c order by id")).rows;
@@ -172,7 +174,18 @@ try {
       // 2a) 0007 only ADDED nullable columns: legacy sales and lines have no operation id and no stored name (never back-filled)
       expect((await one(ldb, "select count(*)::int n from sales where operation_id is not null")).n === 0, "legacy sales have no operation id");
       expect((await one(ldb, "select count(*)::int n from sale_items where product_name is not null or product_sku is not null")).n === 0, "legacy sale lines have no invented product names");
-      // 2) every other business table: identical count AND identical full-row hash (compared without the 0007 columns)
+      // 2b) 0008 links old sale-created cash movements to their sale ONLY when the sale exists, is in the same register and the
+      //     amount matches the payment method (cash: the total, card: 0.00); every link is checked independently here
+      const linked = (await ldb.query("select m.id, m.session_id, m.amount, m.reason, s.cash_session_id, s.total, s.payment_method from cash_movements m join sales s on s.id = m.sale_id")).rows;
+      expect(linked.length >= 1, "the legacy copy has sale-created movements and 0008 linked them: " + linked.length);
+      for (const r of linked) {
+        const ok = r.session_id === r.cash_session_id && (r.payment_method === "cash" ? Number(r.amount) === Number(r.total) && /Efectivo$/.test(r.reason) : Number(r.amount) === 0 && /Tarjeta/.test(r.reason));
+        expect(ok, "movement " + r.id + " is linked to a sale it really belongs to");
+      }
+      const unlinkedSaleText = (await ldb.query("select count(*)::int n from cash_movements where sale_id is null and reason ~ '^Venta #'")).rows[0].n;
+      const expectLinkable = (await ldb.query("select count(*)::int n from cash_movements m join sales s on s.id = substring(m.reason from '^Venta #([0-9]{1,9}) - ')::int where m.reason ~ '^Venta #[0-9]{1,9} - ' and s.cash_session_id = m.session_id and ((m.reason like '% - Efectivo' and s.payment_method='cash' and m.amount = s.total) or (m.reason like '% - Tarjeta%' and s.payment_method='card' and m.amount = 0))")).rows[0].n;
+      expect(linked.length === expectLinkable, "exactly the verifiable movements were linked (" + linked.length + " of " + expectLinkable + " verifiable); " + unlinkedSaleText + " text-matching rows stayed unlinked as manual");
+      // 2) every other business table: identical count AND identical full-row hash (compared without the 0007/0008 columns)
       const untouched = tables.filter((t) => t !== "cash_sessions");
       for (const t of untouched) expect(JSON.stringify(postFull[t]) === JSON.stringify(preFull[t]), `table ${t} must be byte-identical, but changed`);
 

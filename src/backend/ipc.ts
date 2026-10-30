@@ -36,7 +36,8 @@ import {
 } from "./pos-service";
 import { getSaleDetail, legacyListSales, legacySaleById, listSales } from "./sales-history";
 import { getBusinessSettings, updateBusinessSettings } from "./settings-service";
-import { listPrinters, previewReceipt, printReceipt } from "./receipt-service";
+import { listPrinters, previewCashSummary, previewReceipt, printCashSummary, printReceipt } from "./receipt-service";
+import { getCashSessionSummary, listCashSessions } from "./cash-summary";
 import type { Access, IpcContext } from "./auth";
 
 // Access policy for every protected channel. A channel without an entry cannot
@@ -65,6 +66,11 @@ const ACCESS: Record<string, Access> = {
   "receipts:preview": "authenticated",
   "receipts:print": "authenticated",
   "receipts:listPrinters": "admin",
+  // cash-register history and closing summaries: authenticated; a vendor sees the open session and the ones they opened/closed
+  "cash:listSessions": "authenticated",
+  "cash:getSessionSummary": "authenticated",
+  "cash:previewSummary": "authenticated",
+  "cash:printSummary": "authenticated",
   "settings:getBusiness": "admin",
   "settings:updateBusiness": "admin",
   "returns:create": "authenticated",
@@ -174,6 +180,11 @@ export function registerIpcHandlers() {
       .where(eq(cashMovementsTable.sessionId, sessionId))
       .orderBy(desc(cashMovementsTable.createdAt));
   });
+
+  handle("cash:listSessions", async (ctx, query: unknown) => listCashSessions(ctx.user, query));
+  handle("cash:getSessionSummary", async (ctx, id: unknown) => getCashSessionSummary(ctx.user, id));
+  handle("cash:previewSummary", async (ctx, id: unknown) => previewCashSummary(ctx.user, id));
+  handle("cash:printSummary", async (ctx, id: unknown) => printCashSummary(ctx.user, id));
 
   // ============= SALES =============
   handle("sales:create", async (ctx, data: unknown) =>
