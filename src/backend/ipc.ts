@@ -3,7 +3,6 @@ import {
   products as productsTable,
   users as usersTable,
   sales as salesTable,
-  saleItems as saleItemsTable,
   cashSessions as cashSessionsTable,
   cashMovements as cashMovementsTable,
   returns as returnsTable,
@@ -35,7 +34,7 @@ import {
   openCashSession,
   softDeleteProduct,
 } from "./pos-service";
-import { getSaleDetail, listSales } from "./sales-history";
+import { getSaleDetail, legacyListSales, legacySaleById, listSales } from "./sales-history";
 import { getBusinessSettings, updateBusinessSettings } from "./settings-service";
 import { listPrinters, previewReceipt, printReceipt } from "./receipt-service";
 import type { Access, IpcContext } from "./auth";
@@ -56,7 +55,8 @@ const ACCESS: Record<string, Access> = {
   "cash:getMovements": "authenticated",
   "sales:create": "authenticated",
   // PRODUCT DECISION PENDING: should vendors read the full sales history and process returns?
-  // (sales:getAll, sales:getById, returns:create, returns:getAll are open to any authenticated user for now.)
+  // (returns:create, returns:getAll and returns:getSaleForReturn are still open to any authenticated user: owner decision pending.)
+  // sales:getAll / sales:getById are authenticated but limited to the caller's own sales for vendors (enforced in main).
   "sales:getAll": "authenticated",
   "sales:getById": "authenticated",
   // history and receipts: authenticated, but a vendor only ever sees the sales they made (enforced in main)
@@ -180,38 +180,10 @@ export function registerIpcHandlers() {
     createSale(ctx.user.id, data)
   );
 
-  handle("sales:getAll", async () => {
-    return await db
-      .select()
-      .from(salesTable)
-      .orderBy(desc(salesTable.createdAt))
-      .limit(100);
-  });
+  // Original channels, kept for compatibility but under the same rule as the history: a vendor only sees their own sales.
+  handle("sales:getAll", async (ctx) => legacyListSales(ctx.user));
 
-  handle("sales:getById", async (ctx, id: number) => {
-    const [sale] = await db
-      .select()
-      .from(salesTable)
-      .where(eq(salesTable.id, id));
-
-    if (!sale) return null;
-
-    const items = await db
-      .select({
-        id: saleItemsTable.id,
-        productId: saleItemsTable.productId,
-        quantity: saleItemsTable.quantity,
-        unitPrice: saleItemsTable.unitPrice,
-        subtotal: saleItemsTable.subtotal,
-        productName: productsTable.name,
-        productSku: productsTable.sku,
-      })
-      .from(saleItemsTable)
-      .leftJoin(productsTable, eq(saleItemsTable.productId, productsTable.id))
-      .where(eq(saleItemsTable.saleId, id));
-
-    return { ...sale, items };
-  });
+  handle("sales:getById", async (ctx, id: unknown) => legacySaleById(ctx.user, id));
 
   // ============= SALES HISTORY, RECEIPTS, SETTINGS =============
   handle("sales:list", async (ctx, query: unknown) => listSales(ctx.user, query));

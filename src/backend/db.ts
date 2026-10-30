@@ -22,13 +22,20 @@ export const pool = new Pool({
   connectionString: dbConfig.ok ? dbConfig.url : "postgresql://unconfigured@127.0.0.1:1/unconfigured",
 });
 
-// Configurar la zona horaria de la sesión al conectarse
+// A lost connection (PostgreSQL restarted, an administrator terminated the session) makes the driver emit 'error':
+//  - on an idle pooled client: handled by the pool's own listener below;
+//  - on a client that is checked out (a transaction in flight): pg-pool removes its listener, and without one of ours the
+//    error would be an uncaught exception that blocks or crashes the main process. The query itself still rejects, so the
+//    caller gets a clean [ERROR_INTERNO]; the dead client is discarded and the next call reconnects.
 pool.on("error", (err) => {
-  // an idle connection was lost (server restart, administrator termination): the pool discards it and reconnects on demand
   console.error("DB_POOL_IDLE_CLIENT_ERROR:", (err as { code?: string }).code ?? "sin código");
 });
 
+// Configurar la zona horaria de la sesión al conectarse
 pool.on("connect", async (client) => {
+  client.on("error", (err) => {
+    console.error("DB_CLIENT_ERROR:", (err as { code?: string }).code ?? "sin código");
+  });
   try {
     // Obtener la zona horaria local del sistema
     const offset = -new Date().getTimezoneOffset(); // Offset en minutos (negativo porque getTimezoneOffset devuelve inverso)

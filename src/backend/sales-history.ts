@@ -147,3 +147,37 @@ export async function getSaleDetail(viewer: Viewer, saleIdRaw: unknown) {
   }
   return { sale, items, returns, cashSession };
 }
+
+/**
+ * Compatibility reads for the original channels (sales:getAll / sales:getById): same data shape as before, same
+ * visibility rule as the history (administrator: every sale; vendor: only their own), enforced here in main.
+ * A sale the caller may not see is indistinguishable from one that does not exist (null), so ids cannot be probed.
+ */
+export async function legacyListSales(viewer: Viewer) {
+  const q = db.select().from(salesTable);
+  const rows = viewer.role === "admin" ? q : q.where(eq(salesTable.userId, viewer.id));
+  return await rows.orderBy(desc(salesTable.createdAt), desc(salesTable.id)).limit(100);
+}
+
+export async function legacySaleById(viewer: Viewer, idRaw: unknown) {
+  const id = parseId(idRaw, "VENTA_INVALIDA", "La venta");
+  const where = viewer.role === "admin" ? eq(salesTable.id, id) : and(eq(salesTable.id, id), eq(salesTable.userId, viewer.id));
+  const [sale] = await db.select().from(salesTable).where(where);
+  if (!sale) return null;
+  const items = await db
+    .select({
+      id: saleItemsTable.id,
+      productId: saleItemsTable.productId,
+      quantity: saleItemsTable.quantity,
+      unitPrice: saleItemsTable.unitPrice,
+      subtotal: saleItemsTable.subtotal,
+      // identity as sold when it was stored, the catalogue name for sales made before that existed
+      productName: sql<string | null>`coalesce(${saleItemsTable.productName}, ${productsTable.name})`,
+      productSku: sql<string | null>`coalesce(${saleItemsTable.productSku}, ${productsTable.sku})`,
+    })
+    .from(saleItemsTable)
+    .leftJoin(productsTable, eq(saleItemsTable.productId, productsTable.id))
+    .where(eq(saleItemsTable.saleId, id))
+    .orderBy(saleItemsTable.id);
+  return { ...sale, items };
+}

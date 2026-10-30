@@ -57,6 +57,23 @@ async function findReplay(userId: number, input: ReturnType<typeof parseSaleInpu
   ) {
     throw new BusinessError("OPERACION_DUPLICADA", "El identificador de operación ya se usó para otra venta");
   }
+  // Same user, register, method and total is not enough (two different carts can add up to the same amount): the lines
+  // must be the ones actually stored for that sale (product, quantity and unit price), regardless of their order.
+  const stored = await db
+    .select({ productId: saleItemsTable.productId, quantity: saleItemsTable.quantity, unitPrice: saleItemsTable.unitPrice })
+    .from(saleItemsTable)
+    .where(eq(saleItemsTable.saleId, existing.id));
+  const signature = (lines: { productId: number; quantity: number; unitPriceCents: number }[]) =>
+    lines
+      .map((l) => `${l.productId}:${l.quantity}:${l.unitPriceCents}`)
+      .sort()
+      .join("|");
+  const sameLines =
+    signature(stored.map((l) => ({ productId: l.productId, quantity: l.quantity, unitPriceCents: toCents(l.unitPrice, "precio unitario") }))) ===
+    signature(input.items.map((i) => ({ productId: i.productId, quantity: i.quantity, unitPriceCents: i.unitPriceCents })));
+  if (!sameLines) {
+    throw new BusinessError("OPERACION_DUPLICADA", "El identificador de operación ya se usó para una venta con otros artículos o cantidades");
+  }
   return { ...existing, replayed: true as const };
 }
 
