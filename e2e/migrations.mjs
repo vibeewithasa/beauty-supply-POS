@@ -15,7 +15,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { _electron } from "playwright-core";
 import {
-  ROOT, urlFor, createRunDb, dropRunDb, connectRunDb, buildMain, createRecorder, summarize, expect, scrub, waitFor,
+  ROOT, E2E_PORT, urlFor, createRunDb, dropRunDb, connectRunDb, buildMain, createRecorder, summarize, expect, scrub, waitFor,
 } from "./lib/harness.mjs";
 
 const PG_BIN = process.env.PG_BIN || "C:/Program Files/PostgreSQL/18/bin";
@@ -382,38 +382,169 @@ try {
     return `${entries.length} migrations, ${snaps.length} snapshots chained, no orphan SQL at the top level`;
   });
 
-  // ------------------------------------------------------------ 4. startup must abort when migrations fail
-  await test("MIG-05.app_refuses_to_run_when_migrations_fail", "migration", async () => {
-    const broken = await newDb();
-    const bdb = await connectRunDb(broken);
-    // a conflicting pre-existing table makes migration 0003 fail (column created_at does not exist)
-    await bdb.query("create table cash_movements (id serial primary key)");
-    const env = { ...process.env, DATABASE_URL: urlFor(broken, "e2e_app") };
+  // ------------------------------------------------------------ 4. startup only VERIFIES the schema, it never migrates
+  // Launches the real app against a database and returns its window plus the main-process log.
+  const startApp = async (dbName) => {
+    const env = { ...process.env, DATABASE_URL: urlFor(dbName, "e2e_app"), POS_DEV_PORT: String(E2E_PORT) };
     delete env.ELECTRON_RUN_AS_NODE;
-    const app = await _electron.launch({ executablePath: path.join(ROOT, "node_modules/electron/dist/electron.exe"), args: ["."], cwd: ROOT, env, timeout: 60000 });
+    const userData = fs.mkdtempSync(path.join(os.tmpdir(), "e2e-mig-ud-"));
+    const app = await _electron.launch({ executablePath: path.join(ROOT, "node_modules/electron/dist/electron.exe"), args: [".", "--user-data-dir=" + userData], cwd: ROOT, env, timeout: 60000 });
     const log = [];
-    for (const s of [app.process().stdout, app.process().stderr]) s && s.on("data", (b) => log.push(String(b)));
+    for (const st of [app.process().stdout, app.process().stderr]) st && st.on("data", (b) => log.push(String(b)));
+    const win = await app.firstWindow();
+    await waitFor(async () => win.url().startsWith("data:text/html"), 15000);
+    return { app, win, log, close: async () => { await app.close().catch(() => {}); await new Promise((r) => setTimeout(r, 300)); fs.rmSync(userData, { recursive: true, force: true }); } };
+  };
+  const expectSafeStop = async (h, headline, mustNotContain = []) => {
+    expect(h.win.url().startsWith("data:text/html"), "only the static page is shown: " + h.win.url().slice(0, 30));
+    const text = await h.win.evaluate(() => document.body.innerText);
+    expect(text.includes(headline), "message shown: " + headline + " | got: " + text.slice(0, 80));
+    for (const bad of mustNotContain) expect(!text.includes(bad), "message must not contain " + bad);
+    expect(!/postgres(ql)?:\/\/|password|select |relation "/i.test(text), "no connection details or SQL on screen");
+    expect((await h.win.evaluate(() => typeof window.api)) === "undefined", "the page has no API");
+    expect(h.log.join("").includes("STARTUP_ABORTED"), "main logged STARTUP_ABORTED");
+    // even a window WITH the preload cannot reach any handler: none was registered
+    await h.app.evaluate(({ BrowserWindow }, preload) => {
+      const w = new BrowserWindow({ show: false, webPreferences: { preload, contextIsolation: true, nodeIntegration: false } });
+      w.loadURL("data:text/html,<p>probe</p>");
+    }, path.join(ROOT, "dist/preload/preload.cjs"));
+    const probe = await waitFor(async () => h.app.windows().find((w) => w.url().includes("probe")), 15000);
+    expect(probe, "probe window");
+    const r = await probe.evaluate(async () => { try { await window.api.auth.login("0000"); return "ALLOWED"; } catch (e) { return String(e.message); } });
+    expect(/No handler registered/.test(r), "IPC handlers must not exist, got: " + r);
+  };
+  const tablesIn = async (d) => (await one(d, "select count(*)::int n from information_schema.tables where table_schema='public'")).n;
+
+  await test("MIG-05.app_on_an_empty_database_stops_safely_and_creates_nothing", "migration", async () => {
+    const name = await newDb();
+    const d = await connectRunDb(name);
+    const h = await startApp(name);
+    try { await expectSafeStop(h, "La base de datos no está inicializada"); } finally { await h.close(); }
+    expect((await tablesIn(d)) === 0, "the app did NOT create any table in the empty database");
+    expect((await one(d, "select to_regclass('drizzle.__drizzle_migrations') is not null ok")).ok === false, "nor the migrations table");
+    await d.end();
+  });
+  await test("MIG-06b.app_on_a_database_missing_migrations_stops_safely_and_does_not_migrate_it", "migration", async () => {
+    const name = await newDb();
+    const d = await connectRunDb(name);
+    await applyMigrations(name, makeFolder(7)); // everything except 0007 (what an owner's older database looks like)
+    const before = await fingerprint(d);
+    const h = await startApp(name);
+    try { await expectSafeStop(h, "La base de datos necesita actualizarse"); expect((await h.win.evaluate(() => document.body.innerText)).includes("0007_sales_history_receipts"), "names the missing migration"); } finally { await h.close(); }
+    expect((await one(d, "select count(*)::int n from drizzle.__drizzle_migrations")).n === 7, "still 7 migrations: the app did not apply 0007");
+    expect((await one(d, "select to_regclass('public.business_settings') is not null ok")).ok === false, "the 0007 table was not created");
+    expect((await fingerprint(d)) === before, "no data changed");
+    await d.end();
+  });
+  await test("MIG-06c.app_on_a_database_from_a_newer_version_stops_safely", "migration", async () => {
+    const name = await newDb();
+    const d = await connectRunDb(name);
+    await applyMigrations(name);
+    await d.query("insert into drizzle.__drizzle_migrations(hash, created_at) values('ffff-from-a-future-version', 9999999999999)");
+    const h = await startApp(name);
+    try { await expectSafeStop(h, "La base de datos es más nueva que esta aplicación"); } finally { await h.close(); }
+    await d.end();
+  });
+  await test("MIG-06d.app_with_an_unreachable_database_stops_safely_without_leaking_connection_details", "migration", async () => {
+    const env = { ...process.env, DATABASE_URL: urlFor("beauty_pos_e2e_does_not_exist_zz", "e2e_app"), POS_DEV_PORT: String(E2E_PORT) };
+    delete env.ELECTRON_RUN_AS_NODE;
+    const userData = fs.mkdtempSync(path.join(os.tmpdir(), "e2e-mig-ud-"));
+    const app = await _electron.launch({ executablePath: path.join(ROOT, "node_modules/electron/dist/electron.exe"), args: [".", "--user-data-dir=" + userData], cwd: ROOT, env, timeout: 60000 });
+    const log = [];
+    for (const st of [app.process().stdout, app.process().stderr]) st && st.on("data", (b) => log.push(String(b)));
     try {
       const win = await app.firstWindow();
       await waitFor(async () => win.url().startsWith("data:text/html"), 15000);
-      expect(win.url().startsWith("data:text/html"), "only the static error page is shown: " + win.url().slice(0, 40));
-      expect((await win.evaluate(() => document.body.innerText)).includes("No se pudo preparar la base de datos"), "error message shown");
-      expect((await win.evaluate(() => typeof window.api)) === "undefined", "the error page has no API");
-      expect(log.join("").includes("STARTUP_ABORTED"), "main logged STARTUP_ABORTED");
-      // even a window WITH the preload cannot reach any handler: none was registered
-      await app.evaluate(({ BrowserWindow }, preload) => {
-        const w = new BrowserWindow({ show: false, webPreferences: { preload, contextIsolation: true, nodeIntegration: false } });
-        w.loadURL("data:text/html,<p>probe</p>");
-      }, path.join(ROOT, "dist/preload/preload.cjs"));
-      const probe = await waitFor(async () => app.windows().find((w) => w.url().includes("probe")), 15000);
-      expect(probe, "probe window");
-      const r = await probe.evaluate(async () => { try { await window.api.auth.login("0000"); return "ALLOWED"; } catch (e) { return String(e.message); } });
-      expect(/No handler registered/.test(r), "IPC handlers must not exist after a failed migration, got: " + r);
-    } finally { await app.close().catch(() => {}); }
-    const cols = (await bdb.query("select column_name from information_schema.columns where table_schema='public' and table_name='cash_movements'")).rows.map((r) => r.column_name);
-    expect(cols.join() === "id", "the broken database was not modified: " + cols.join());
-    expect((await one(bdb, "select count(*)::int n from information_schema.tables where table_schema='public' and table_name='users'")).n === 0, "no schema was half-created (migrations ran in one rolled-back transaction)");
-    await bdb.end();
+      const text = await win.evaluate(() => document.body.innerText);
+      expect(text.includes("No se pudo comprobar la base de datos"), "safe message: " + text.slice(0, 80));
+      expect(!/postgres(ql)?:\/\/|password|beauty_pos_e2e/i.test(text), "no connection details on screen");
+      const joined = log.join("");
+      expect(joined.includes("STARTUP_ABORTED") && !joined.includes(new URL(urlFor("x")).password || "\u0000"), "logged without the password");
+    } finally { await app.close().catch(() => {}); await new Promise((r) => setTimeout(r, 300)); fs.rmSync(userData, { recursive: true, force: true }); }
+  });
+
+  // ------------------------------------------------------------ 5. the explicit administrative migration command
+  const cli = (name, args, extraEnv = {}) => {
+    const r = spawnSync(process.execPath, [path.join(ROOT, "scripts/db-migrate.mjs"), ...args], { cwd: ROOT, encoding: "utf8", env: { ...process.env, DATABASE_URL: urlFor(name, "e2e_cli"), ...extraEnv } });
+    return { code: r.status, out: scrub((r.stdout || "") + (r.stderr || "")) };
+  };
+  await test("MIG-12.db_migrate_dry_run_changes_nothing_and_apply_needs_the_exact_database_name", "migration", async () => {
+    const name = await newDb();
+    const d = await connectRunDb(name);
+    await applyMigrations(name, makeFolder(7));
+    const before = await fingerprint(d);
+    const dry = cli(name, []);
+    expect(dry.code === 0 && /SIMULACI/.test(dry.out) && dry.out.includes("0007_sales_history_receipts"), "dry run reports the plan: " + dry.out.slice(-200));
+    expect((await one(d, "select count(*)::int n from drizzle.__drizzle_migrations")).n === 7 && (await fingerprint(d)) === before, "dry run changed nothing");
+    const noConfirm = cli(name, ["--apply"]);
+    expect(noConfirm.code === 1 && /--confirm-database=/.test(noConfirm.out), "--apply without confirmation refused: " + noConfirm.out.slice(-160));
+    const wrong = cli(name, ["--apply", "--confirm-database=beauty_pos"]);
+    expect(wrong.code === 1 && /--confirm-database=/.test(wrong.out), "--apply with another database name refused");
+    expect((await one(d, "select count(*)::int n from drizzle.__drizzle_migrations")).n === 7, "still nothing applied");
+    await d.end();
+  });
+  await test("MIG-13.db_migrate_apply_takes_a_verified_backup_first_then_migrates_and_keeps_the_data", "migration", async () => {
+    const name = await newDb();
+    const d = await connectRunDb(name);
+    await applyMigrations(name, makeFolder(7));
+    // some real-looking data so the backup is meaningful
+    await d.query("insert into users(name,pin_hash,role) values('mig13','x','admin')");
+    await d.query("insert into products(sku,name,price,stock) values('M13','m','1.00',3)");
+    const usersBefore = (await one(d, "select count(*)::int n from users")).n;
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "e2e backups with spaces "));
+    try {
+      const r = cli(name, ["--apply", "--confirm-database=" + name, "--backup-dir", dir]);
+      expect(r.code === 0, "apply succeeded: " + r.out.slice(-300));
+      const dumps = fs.readdirSync(dir).filter((x) => x.endsWith(".dump"));
+      expect(dumps.length === 1 && /_pre-migrate_\d{8}T\d{6}Z\.dump$/.test(dumps[0]), "one pre-migrate backup was written: " + dumps.join());
+      expect(fs.existsSync(path.join(dir, dumps[0].replace(/\.dump$/, ".summary.json"))), "with its summary");
+      expect(r.out.includes("Respaldo verificado") && r.out.includes("Migraciones aplicadas y verificadas"), "reported");
+      expect((await one(d, "select count(*)::int n from drizzle.__drizzle_migrations")).n === JOURNAL, "all migrations applied");
+      expect((await one(d, "select count(*)::int n from users")).n === usersBefore && (await one(d, "select stock from products where sku='M13'")).stock === 3, "data preserved");
+      expect((await one(d, "select name from business_settings where id=1")).name === "Estética Leal", "0007 default row present");
+      const again = cli(name, ["--apply", "--confirm-database=" + name, "--backup-dir", dir]);
+      expect(again.code === 0 && /ya está al día/.test(again.out) && fs.readdirSync(dir).filter((x) => x.endsWith(".dump")).length === 1, "a second run is a no-op and takes no new backup");
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+    await d.end();
+  });
+  await test("MIG-14.db_migrate_refuses_when_the_precheck_blocks_and_never_backs_up_or_migrates", "migration", async () => {
+    const name = await newDb();
+    const d = await connectRunDb(name);
+    await applyMigrations(name, makeFolder(4));
+    await d.query("insert into users(name,pin_hash,role) values('a','dup','admin'),('b','dup','vendor')"); // 0006 would fail: same PIN hash
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "e2e-blocked-"));
+    try {
+      const r = cli(name, ["--apply", "--confirm-database=" + name, "--backup-dir", dir]);
+      expect(r.code === 1 && /bloqueos/.test(r.out), "refused because of the precheck: " + r.out.slice(-200));
+      expect(fs.readdirSync(dir).length === 0, "no backup was taken either");
+      expect((await one(d, "select count(*)::int n from drizzle.__drizzle_migrations")).n === 4, "nothing migrated");
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+    await d.end();
+  });
+  await test("MIG-15.db_migrate_refuses_a_backup_folder_inside_the_repository_and_a_newer_database", "migration", async () => {
+    const name = await newDb();
+    const d = await connectRunDb(name);
+    await applyMigrations(name, makeFolder(7));
+    await d.query("insert into users(name,pin_hash,role) values('x','h1','admin')");
+    const inside = cli(name, ["--apply", "--confirm-database=" + name, "--backup-dir", path.join(ROOT, "e2e-artifacts", "never-here")]);
+    expect(inside.code === 1 && /fuera del proyecto/.test(inside.out), "backups inside the project are refused: " + inside.out.slice(-160));
+    expect((await one(d, "select count(*)::int n from drizzle.__drizzle_migrations")).n === 7, "nothing migrated");
+    expect(!fs.existsSync(path.join(ROOT, "e2e-artifacts", "never-here")), "no folder was created");
+    await d.query("insert into drizzle.__drizzle_migrations(hash, created_at) values('from-the-future', 9999999999999)");
+    const newer = cli(name, ["--apply", "--confirm-database=" + name, "--backup-dir", os.tmpdir()]);
+    expect(newer.code === 1 && /más nueva/.test(newer.out), "a database from a newer version is refused: " + newer.out.slice(-160));
+    await d.end();
+  });
+  await test("MIG-16.no_test_or_dev_command_can_migrate_an_existing_database", "migration", async () => {
+    // the application has no code path that changes a schema, and the harness only prepares databases it created itself
+    const read = (p) => fs.readFileSync(path.join(ROOT, p), "utf8");
+    const mainSrc = read("src/main/main.ts") + read("src/backend/startup-check.ts") + read("src/backend/db.ts");
+    expect(!/migrate\(|applyMigrations|createDbAndRunMigrations|drizzle-orm\/node-postgres\/migrator/.test(mainSrc), "no migrate call in the main process code");
+    expect(!fs.existsSync(path.join(ROOT, "src/backend/migrate.ts")) && !fs.existsSync(path.join(ROOT, "scripts/migrate.mjs")), "the implicit migration files are gone");
+    const h = read("e2e/lib/harness.mjs");
+    expect(/created\.has\(name\)/.test(h) && /hasUserTables/.test(h), "prepareRunDb refuses databases it did not create or that already have tables");
+    const pkg = JSON.parse(read("package.json"));
+    expect(pkg.scripts["db:migrate"] === "node ./scripts/db-migrate.mjs" && !Object.entries(pkg.scripts).some(([k, v]) => k.startsWith("test") && /db-migrate|--apply/.test(String(v))), "no test script runs the migration command");
   });
 } catch (e) {
   rec("migrations.unexpected_error", "FAIL", scrub(String(e.stack || e)).split("\n").slice(0, 3).join(" | "), { kind: "migration" });

@@ -6,7 +6,7 @@ import fs from "node:fs";
 import crypto from "node:crypto";
 import {
   ROOT, ensureVite, buildMain, createRunDb, dropRunDb, connectRunDb, launchApp, startConnMonitor,
-  makeData, createRecorder, summarize, scrub, sleep,
+  makeData, createRecorder, summarize, scrub, sleep, prepareRunDb,
 } from "./lib/harness.mjs";
 
 const SUITES = { security: "./suites/security.mjs", ui: "./suites/ui.mjs", integration: "./suites/integration.mjs", catalog: "./suites/catalog.mjs", returns: "./suites/returns.mjs", hardening: "./suites/hardening.mjs", pin: "./suites/pin.mjs", screens: "./suites/screens.mjs", cart: "./suites/cart.mjs", history: "./suites/history.mjs", receipts: "./suites/receipts.mjs", ux: "./suites/ux.mjs" };
@@ -43,7 +43,8 @@ try {
   buildMain();
   vite = await ensureVite();
   runDb = await createRunDb();
-  log(`isolated database created: ${runDb} (existing databases are not touched)`);
+  await prepareRunDb(runDb); // explicit, verified migration of the NEW database (the app only verifies the schema)
+  log(`isolated database created and migrated: ${runDb} (existing databases are not touched)`);
 
   for (const name of selected) {
     const mod = await import(SUITES[name]);

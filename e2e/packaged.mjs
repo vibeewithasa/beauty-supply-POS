@@ -11,8 +11,9 @@ import crypto from "node:crypto";
 import { createRequire } from "node:module";
 import { _electron } from "playwright-core";
 import {
-  ROOT, createRunDb, dropRunDb, connectRunDb, urlFor, makeData, createRecorder, summarize, scrub, sleep, waitFor, ui, ipc, expect, containsSecret,
+  ROOT, createRunDb, prepareRunDb, dropRunDb, connectRunDb, urlFor, makeData, createRecorder, summarize, scrub, sleep, waitFor, ui, ipc, expect, containsSecret,
 } from "./lib/harness.mjs";
+import { applyMigrations, createRuntimeRole, dropRuntimeRole } from "../scripts/lib/db-ops.mjs";
 
 const require = createRequire(import.meta.url);
 const EXE = path.join(ROOT, "release", "win-unpacked", "Beauty POS.exe");
@@ -28,6 +29,8 @@ const userData = fs.mkdtempSync(path.join(os.tmpdir(), "pos-packaged-"));
 const log = (...a) => console.log(...a.map((x) => (typeof x === "string" ? scrub(x) : x)));
 
 let runDb, db, page;
+const extraDbs = [];
+const roles = [];
 const launched = [];
 
 function appEnv(extra = {}, withDb = true) {
@@ -63,6 +66,7 @@ const { results, rec, test } = createRecorder("packaged", artifacts, () => page,
 let fatal;
 try {
   runDb = await createRunDb();
+  await prepareRunDb(runDb); // the packaged app only verifies the schema; the test prepares its NEW database explicitly
   db = await connectRunDb(runDb);
   log(`E2E packaged run ${runId} :: isolated database created: ${runDb}`);
   const data = makeData(db, runId + "p");
@@ -264,13 +268,82 @@ try {
       await l.page.getByText(/no es local/).waitFor({ timeout: 3000 });
     } finally { await close(l); fs.rmSync(ud, { recursive: true, force: true }); }
   });
+
+  // ---------------------------------------------------------------- startup only VERIFIES the schema (Sprint 04)
+  const stopsSafely = async (dbName, headline, env = {}) => {
+    const ud = fs.mkdtempSync(path.join(os.tmpdir(), "pos-packaged-schema-"));
+    const l = await launch({ ...appEnv({}, false), ...env, DATABASE_URL: urlFor(dbName, "e2e_packaged") }, { userDataDir: ud });
+    try {
+      await l.page.getByRole("heading", { name: headline }).waitFor({ timeout: 15000 });
+      expect(await l.page.evaluate(() => typeof window.api) === "undefined", "the page has no preload/IPC");
+      const text = await l.page.evaluate(() => document.body.innerText);
+      expect(!/postgres(ql)?:\/\/|password/i.test(text), "no connection details on screen");
+      expect(!l.mainLog.some((x) => containsSecret(x)), "no secret in the main log");
+    } finally { await close(l); fs.rmSync(ud, { recursive: true, force: true }); }
+  };
+  await test("PK-12.packaged_app_on_an_empty_database_stops_safely_and_creates_nothing", "security", async () => {
+    const empty = await createRunDb();
+    extraDbs.push(empty);
+    await stopsSafely(empty, "La base de datos no está inicializada");
+    const d = await connectRunDb(empty);
+    expect((await d.query("select count(*)::int n from information_schema.tables where table_schema='public'")).rows[0].n === 0, "the packaged app created no table");
+    await d.end();
+  });
+  await test("PK-13.packaged_app_on_a_database_missing_a_migration_stops_safely_and_does_not_migrate_it", "security", async () => {
+    const old = await createRunDb();
+    extraDbs.push(old);
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pos-pk-pre7-"));
+    try {
+      fs.mkdirSync(path.join(dir, "meta"));
+      const journal = JSON.parse(fs.readFileSync(path.join(ROOT, "drizzle/meta/_journal.json"), "utf8"));
+      journal.entries = journal.entries.slice(0, 7);
+      fs.writeFileSync(path.join(dir, "meta/_journal.json"), JSON.stringify(journal));
+      for (const e of journal.entries) fs.copyFileSync(path.join(ROOT, "drizzle", e.tag + ".sql"), path.join(dir, e.tag + ".sql"));
+      await applyMigrations(urlFor(old, "e2e_prepare"), dir);
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+    await stopsSafely(old, "La base de datos necesita actualizarse");
+    const d = await connectRunDb(old);
+    expect((await d.query("select count(*)::int n from drizzle.__drizzle_migrations")).rows[0].n === 7, "still 7 migrations: the packaged app did not apply the missing one");
+    await d.end();
+  });
+  await test("PK-14.packaged_app_works_with_a_least_privilege_runtime_role", "security", async () => {
+    const role = "pos_e2e_pk_" + crypto.randomBytes(3).toString("hex");
+    roles.push(role);
+    const pw = crypto.randomBytes(12).toString("base64url");
+    await createRuntimeRole(urlFor(runDb, "e2e_roles"), { role, password: pw, database: runDb });
+    const u = new URL(urlFor(runDb, "e2e_packaged_rt"));
+    u.username = role;
+    u.password = pw;
+    const ud = fs.mkdtempSync(path.join(os.tmpdir(), "pos-packaged-rt-"));
+    const l = await launch({ ...appEnv({}, false), DATABASE_URL: u.toString() }, { userDataDir: ud });
+    try {
+      await l.page.getByText("Ingresa tu PIN para comenzar").waitFor({ timeout: 15000 });
+      await ui.login(l.page, admin.pin);
+      await l.page.waitForURL(/#\/dashboard$/, { timeout: 10000 });
+      await ui.nav(l.page, "Productos");
+      await l.page.getByRole("button", { name: "Nuevo Producto" }).click();
+      const d = l.page.getByRole("dialog");
+      const sku = "RT-" + runId;
+      await d.getByLabel("SKU", { exact: true }).fill(sku);
+      await d.getByLabel("Nombre", { exact: true }).fill("Producto con rol mínimo");
+      await d.getByLabel("Precio inicial").fill("3.50");
+      await d.getByLabel("Stock inicial").fill("2");
+      await d.getByRole("button", { name: "Crear producto" }).click();
+      await l.page.getByRole("row", { name: new RegExp(sku) }).waitFor({ timeout: 8000 });
+      expect((await one("select stock from products where sku=$1", [sku])).stock === 2, "the product was written with the runtime role");
+      const who = await db.query("select distinct usename from pg_stat_activity where application_name='e2e_packaged_rt'");
+      expect(who.rows.length >= 1 && who.rows.every((r) => r.usename === role), "the app's connections used the runtime role: " + JSON.stringify(who.rows));
+    } finally { await close(l); fs.rmSync(ud, { recursive: true, force: true }); }
+  });
 } catch (e) {
   fatal = e;
   rec("suite.unexpected_error", "FAIL", scrub(String(e.stack || e)).split("\n").slice(0, 3).join(" | ").slice(0, 400), { kind: "integration" });
 } finally {
   for (const app of launched) { try { await app.close(); } catch { /* already closed */ } }
   try { await db?.end(); } catch { /* ignore */ }
+  for (const n of extraDbs) { try { await dropRunDb(n); } catch (e) { log("could not drop " + n + ": " + e.message); } }
   if (runDb) { try { await dropRunDb(runDb); log(`isolated database dropped: ${runDb}`); } catch (e) { log("could not drop " + runDb + ": " + e.message); } }
+  for (const r of roles) { try { await dropRuntimeRole(urlFor("x"), r); } catch (e) { log("could not drop role " + r + ": " + e.message); } }
   fs.rmSync(userData, { recursive: true, force: true });
 }
 const { summary, exitCode } = summarize(results, fatal, { runId, suites: ["packaged"] });

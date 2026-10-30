@@ -102,6 +102,21 @@ export async function createRunDb() {
   } finally { await admin.end(); }
   return name;
 }
+/**
+ * Prepares a database THIS run created: applies the migrations explicitly (the application itself never migrates) and
+ * proves the schema is complete. It refuses anything that is not an empty, run-created beauty_pos_e2e_* database, so a
+ * test command can never migrate beauty_pos or any other pre-existing database.
+ */
+export async function prepareRunDb(name) {
+  if (!created.has(name) || !DB_PATTERN.test(name)) throw new Error("refusing to migrate a database this run did not create: " + name);
+  const { applyMigrations, hasUserTables, schemaStatus, withClient } = await import("../../scripts/lib/db-ops.mjs");
+  const url = urlFor(name, "e2e_prepare");
+  if (await withClient(url, hasUserTables, "e2e_prepare_probe")) throw new Error("refusing to prepare a database that already has tables: " + name);
+  const folder = path.join(ROOT, "drizzle");
+  await applyMigrations(url, folder);
+  const st = await schemaStatus(url, folder);
+  if (st.status !== "ok") throw new Error("prepared database is not at the required schema: " + st.status);
+}
 export async function dropRunDb(name) {
   if (!created.has(name) || !DB_PATTERN.test(name)) throw new Error("refusing to drop a database this run did not create: " + name);
   const admin = new Client({ connectionString: urlFor("postgres", "e2e_admin") });

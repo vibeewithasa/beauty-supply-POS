@@ -23,6 +23,11 @@ export const pool = new Pool({
 });
 
 // Configurar la zona horaria de la sesión al conectarse
+pool.on("error", (err) => {
+  // an idle connection was lost (server restart, administrator termination): the pool discards it and reconnects on demand
+  console.error("DB_POOL_IDLE_CLIENT_ERROR:", (err as { code?: string }).code ?? "sin código");
+});
+
 pool.on("connect", async (client) => {
   try {
     // Obtener la zona horaria local del sistema

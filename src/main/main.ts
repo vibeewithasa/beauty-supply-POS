@@ -1,7 +1,7 @@
 import { app, BrowserWindow, Menu, session } from "electron";
 import path from "path";
 import { dbConfig } from "../backend/db";
-import { createDbAndRunMigrations } from "../backend/migrate";
+import { verifyDatabaseSchema } from "../backend/startup-check";
 import { registerIpcHandlers } from "../backend/ipc";
 import { trustedUrl } from "../backend/auth";
 import { resolveDevOrigin } from "../backend/dev-origin";
@@ -107,17 +107,15 @@ app.on("ready", async () => {
     showStartupFailure("Falta la configuración de la base de datos", dbConfig.reason);
     return;
   }
-  try {
-    console.log("Iniciando aplicación...");
-    await createDbAndRunMigrations(app);
-    console.log("Base de datos lista.");
-  } catch (err) {
-    // Never run on a database whose required schema/constraints are not in place.
-    console.error("DB migration error:", err);
-    console.error("STARTUP_ABORTED: IPC handlers not registered.");
-    showStartupFailure("No se pudo preparar la base de datos", "Revisa que PostgreSQL esté activo y que la configuración sea correcta.");
+  // The application never creates or migrates a schema: it only verifies it (see backend/startup-check.ts).
+  console.log("Iniciando aplicación...");
+  const schema = await verifyDatabaseSchema(app.getAppPath());
+  if (!schema.ok) {
+    console.error("STARTUP_ABORTED: database schema is not the one this version requires. IPC handlers not registered.");
+    showStartupFailure(schema.headline, schema.detail);
     return;
   }
+  console.log("Base de datos lista.");
 
   registerIpcHandlers();
   console.log("IPC handlers registrados.");

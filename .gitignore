@@ -150,3 +150,9 @@ e2e-artifacts/
 
 # electron-builder output (installers, unpacked app)
 release/
+
+# database backups and their logs never go to Git
+*.dump
+*.summary.json
+backup.log
+task.log
