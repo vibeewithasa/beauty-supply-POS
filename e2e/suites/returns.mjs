@@ -192,8 +192,9 @@ export async function run(c) {
     expect(pending > 0 && paid === 0 && Math.abs(pending - sum) < 0.005 && Math.abs(Number(stats.v.returns.total) - sum) < 0.005, "pending covers all of today's returns, paid is 0: " + J(stats.v.returns));
     await ui.nav(page, "Ver Stock"); // leave and re-enter: the dashboard loads its figures on mount
     await ui.nav(page, "Dashboard");
-    await page.getByText("Reembolsos pendientes de pago (hoy)").waitFor({ timeout: 8000 });
-    await page.getByText("Reembolsos pagados (hoy)").waitFor();
+    await page.getByText("Reembolsos pendientes de pago", { exact: true }).waitFor({ timeout: 8000 });
+    await page.getByText("Reembolsos pagados en efectivo (hoy)").waitFor();
+    await page.getByText("Reembolsos pagados por tarjeta (hoy)").waitFor();
     const text = await page.evaluate(() => document.body.innerText);
     expect(text.includes("$" + pending.toFixed(2)) && text.includes("$0.00"), `the screen shows the pending amount apart from the paid one: pending=${pending} paid=${paid} excerpt=${J(text.slice(text.indexOf("Reembolsos"), text.indexOf("Reembolsos") + 120))}`);
     expect(!/\bDevoluciones\b\s*\$/.test(text), "no card presents returns as money handed back");

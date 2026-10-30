@@ -38,6 +38,7 @@
     "test:cash": "node e2e/run.mjs cash",
     "test:refunds": "node e2e/run.mjs refunds",
     "test:refundauth": "node e2e/run.mjs refundauth",
+    "test:refundui": "node e2e/run.mjs refundui",
     "test:migrations": "node e2e/migrations.mjs",
     "test:all": "npm run test:unit && node e2e/run.mjs all && node e2e/migrations.mjs && node e2e/ops.mjs",
     "package:dir": "npm run build && electron-builder --win dir",

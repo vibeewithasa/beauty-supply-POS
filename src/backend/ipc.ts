@@ -6,9 +6,10 @@ import {
   cashSessions as cashSessionsTable,
   cashMovements as cashMovementsTable,
   returns as returnsTable,
+  refundSettlements as settlementsTable,
   deletedProductsLog as deletedProductsLogTable,
 } from "./schema";
-import { eq, or, and, desc, sql, gte, lte, isNull } from "drizzle-orm";
+import { eq, or, and, desc, sql, gte, lt, lte, isNull } from "drizzle-orm";
 import { authorizeAdmin, registerAuthHandlers, secureHandle } from "./auth";
 import { createUser, deactivateUser, listActiveUsers, updateUser } from "./users-service";
 import { createReturn } from "./returns-service";
@@ -37,7 +38,7 @@ import {
 } from "./pos-service";
 import { getSaleDetail, legacyListSales, legacySaleById, listSales } from "./sales-history";
 import { getBusinessSettings, updateBusinessSettings } from "./settings-service";
-import { listPrinters, previewCashSummary, previewReceipt, printCashSummary, printReceipt } from "./receipt-service";
+import { listPrinters, previewCashSummary, previewReceipt, previewReturnVoucher, printCashSummary, printReceipt, printReturnVoucher } from "./receipt-service";
 import { getCashSessionSummary, listCashSessions } from "./cash-summary";
 import type { Access, IpcContext } from "./auth";
 
@@ -80,6 +81,8 @@ const ACCESS: Record<string, Access> = {
   "returns:settleRefund": "authenticated",
   "returns:getAll": "authenticated",
   "returns:getSaleForReturn": "authenticated",
+  "returns:previewVoucher": "authenticated",
+  "returns:printVoucher": "authenticated",
   "users:getAll": "admin",
   "users:create": "admin",
   "users:update": "admin",
@@ -226,6 +229,10 @@ export function registerIpcHandlers() {
 
   handle("returns:getAll", async () => listReturns());
 
+  // internal voucher of a return (not a fiscal document): built in main from PostgreSQL, printing writes nothing
+  handle("returns:previewVoucher", async (_ctx, returnId: unknown) => previewReturnVoucher(returnId));
+  handle("returns:printVoucher", async (_ctx, returnId: unknown) => printReturnVoucher(returnId));
+
   // read-only lookup for the returns screen: sale lines, already returned and still returnable quantities
   handle("returns:getSaleForReturn", async (_ctx, saleId: unknown) => getSaleForReturn(saleId));
 
@@ -369,6 +376,24 @@ export function registerIpcHandlers() {
       const r = returnsResult.find((x) => x.status === status);
       return { total: r?.total || "0", count: r?.count || 0 };
     };
+    // Refunds actually PAID today, by method (payment date, not return date) and what is still owed (all time)
+    const paidTodayRows = await db
+      .select({
+        method: settlementsTable.paymentMethod,
+        total: sql<string>`COALESCE(SUM(${settlementsTable.amount}), 0)::text`,
+        count: sql<number>`COUNT(*)::int`,
+      })
+      .from(settlementsTable)
+      .where(and(gte(settlementsTable.paidAt, today), lt(settlementsTable.paidAt, tomorrow)))
+      .groupBy(settlementsTable.paymentMethod);
+    const paidToday = (m: "cash" | "card") => {
+      const r = paidTodayRows.find((x) => x.method === m);
+      return { total: r?.total || "0", count: r?.count || 0 };
+    };
+    const [owed] = await db
+      .select({ total: sql<string>`COALESCE(SUM(${returnsTable.totalRefund}), 0)::text`, count: sql<number>`COUNT(*)::int` })
+      .from(returnsTable)
+      .where(eq(returnsTable.refundStatus, "pending"));
     const returnsAllTotal = returnsResult.reduce((a, x) => a + Number(x.total), 0);
     const returnsAllCount = returnsResult.reduce((a, x) => a + x.count, 0);
 
@@ -451,8 +476,12 @@ export function registerIpcHandlers() {
         total: returnsAllTotal.toFixed(2),
         count: returnsAllCount,
         pending: returnsBy("pending"), // owed to customers, not yet paid out
-        paid: returnsBy("paid"), // actually paid (no settlement operation exists yet)
+        paid: returnsBy("paid"), // paid by an administrator-authorized settlement (by RETURN date; see `refunds` for payment dates)
         legacy: returnsBy("legacy_unspecified"), // registered before the state existed
+      },
+      refunds: {
+        paidToday: { cash: paidToday("cash"), card: paidToday("card") }, // by payment date
+        pendingOutstanding: { total: owed?.total || "0", count: owed?.count || 0 }, // owed to customers, all dates
       },
       stock: {
         total: stockResult[0]?.total || 0,

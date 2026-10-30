@@ -19,7 +19,7 @@ const used = [...preload.matchAll(/invoke\("([\w:]+)"/g)].map((m) => m[1]);
 
 test("every handler registered in ipc.ts has a policy and vice versa", () => {
   assert.deepEqual([...handled].sort(), Object.keys(policy).sort());
-  assert.equal(handled.length, 42);
+  assert.equal(handled.length, 44);
 });
 test("admin-only channels are exactly the expected 19", () => {
   const admin = Object.entries(policy).filter(([, v]) => v === "admin").map(([k]) => k);

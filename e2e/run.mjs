@@ -9,11 +9,11 @@ import {
   makeData, createRecorder, summarize, scrub, sleep, prepareRunDb,
 } from "./lib/harness.mjs";
 
-const SUITES = { security: "./suites/security.mjs", ui: "./suites/ui.mjs", integration: "./suites/integration.mjs", catalog: "./suites/catalog.mjs", returns: "./suites/returns.mjs", hardening: "./suites/hardening.mjs", pin: "./suites/pin.mjs", screens: "./suites/screens.mjs", cart: "./suites/cart.mjs", history: "./suites/history.mjs", safety: "./suites/safety.mjs", cash: "./suites/cash.mjs", refunds: "./suites/refunds.mjs", refundauth: "./suites/refundauth.mjs", receipts: "./suites/receipts.mjs", ux: "./suites/ux.mjs" };
+const SUITES = { security: "./suites/security.mjs", ui: "./suites/ui.mjs", integration: "./suites/integration.mjs", catalog: "./suites/catalog.mjs", returns: "./suites/returns.mjs", hardening: "./suites/hardening.mjs", pin: "./suites/pin.mjs", screens: "./suites/screens.mjs", cart: "./suites/cart.mjs", history: "./suites/history.mjs", safety: "./suites/safety.mjs", cash: "./suites/cash.mjs", refunds: "./suites/refunds.mjs", refundauth: "./suites/refundauth.mjs", refundui: "./suites/refundui.mjs", receipts: "./suites/receipts.mjs", ux: "./suites/ux.mjs" };
 const arg = process.argv[2] || "all";
-const selected = arg === "all" ? ["security", "ui", "integration", "catalog", "returns", "hardening", "pin", "screens", "cart", "history", "receipts", "ux", "safety", "cash", "refunds", "refundauth"] : [arg];
+const selected = arg === "all" ? ["security", "ui", "integration", "catalog", "returns", "hardening", "pin", "screens", "cart", "history", "receipts", "ux", "safety", "cash", "refunds", "refundauth", "refundui"] : [arg];
 if (!selected.every((s) => SUITES[s])) {
-  console.error("Unknown suite. Use: security | ui | integration | catalog | returns | hardening | pin | screens | cart | history | receipts | ux | safety | cash | refunds | refundauth | all");
+  console.error("Unknown suite. Use: security | ui | integration | catalog | returns | hardening | pin | screens | cart | history | receipts | ux | safety | cash | refunds | refundauth | refundui | all");
   process.exit(2);
 }
 

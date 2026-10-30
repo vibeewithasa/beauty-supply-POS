@@ -215,18 +215,23 @@ export async function run(c) {
     await qty.fill("1");
     await page.getByLabel("Motivo", { exact: true }).fill("Cliente se arrepintió");
     expect((await page.getByTestId("refund-preview").innerText()) === "$10.00", "amount preview");
-    await page.getByRole("button", { name: "Revisar devolución" }).click();
-    await page.getByText(/PENDIENTE DE REEMBOLSO/).first().waitFor();
-    await page.getByRole("button", { name: "Confirmar devolución" }).click();
-    await page.getByTestId("return-result").getByText(/PENDIENTE DE REEMBOLSO/).waitFor();
+    // no administrator at hand: the return is registered WITHOUT a refund and stays pending (the main button needs a PIN)
+    expect(await page.getByRole("button", { name: "Confirmar devolución y reembolso" }).isDisabled(), "the refund button stays disabled until a method is chosen and the money is confirmed");
+    await page.getByRole("button", { name: /Registrar la devolución sin reembolso/ }).click();
+    await page.getByTestId("return-result").getByText(/Estado: PENDIENTE/).waitFor();
     const r = await one("select * from returns where sale_id=$1", [saleId]);
     expect(r && r.refund_status === "pending" && num(r.total_refund) === 10, "persisted pending return: " + JSON.stringify(r));
     expect((await one("select stock from products where id=$1", [ret.id])).stock === 18, "stock returned to inventory");
     const cash1 = await cashState();
     expect(cash1.cur === cash0.cur && cash1.mv === cash0.mv, "cash untouched: " + JSON.stringify({ cash0, cash1 }));
     // lookup now reflects the persisted state, and the history shows the refund status
-    await page.getByRole("cell", { name: "PENDIENTE DE REEMBOLSO" }).first().waitFor();
-    expect(await page.getByRole("button", { name: /pagado|Marcar/i }).count() === 0, "no button marks a refund as paid");
+    await page.getByRole("cell", { name: "PENDIENTE", exact: true }).first().waitFor();
+    // paying it needs the authorization dialog (administrator PIN): nothing marks a refund as paid on its own
+    await page.getByRole("button", { name: "Registrar pago pendiente" }).first().click();
+    await page.locator("#rf-admin-pin").waitFor();
+    expect(await page.getByRole("button", { name: "Autorizar y registrar pago" }).isDisabled(), "no PIN, no method, no confirmation: the payment cannot be sent");
+    await page.getByRole("button", { name: "Cancelar" }).click();
+    expect((await one("select refund_status from returns where sale_id=$1", [saleId])).refund_status === "pending", "still pending after cancelling");
   });
   await test("SCR-12.over_return_is_blocked_then_the_remaining_units_can_be_returned", "e2e", async () => {
     const n0 = (await one("select count(*)::int n from returns")).n;
@@ -234,13 +239,11 @@ export async function run(c) {
     await qty.fill("3");
     await page.getByText("Máximo 2").waitFor();
     await page.getByLabel("Motivo", { exact: true }).fill("Exceso");
-    await page.getByRole("button", { name: "Revisar devolución" }).click();
-    await toast(/cantidad válida/);
-    expect(await page.getByRole("button", { name: "Confirmar devolución" }).count() === 0, "no confirmation offered");
+    expect(await page.getByRole("button", { name: "Confirmar devolución y reembolso" }).isDisabled(), "an over-return cannot be sent for authorization");
+    expect(await page.getByRole("button", { name: /Registrar la devolución sin reembolso/ }).isDisabled(), "nor registered as pending");
     expect((await one("select count(*)::int n from returns")).n === n0, "no return was created");
     await qty.fill("2");
-    await page.getByRole("button", { name: "Revisar devolución" }).click();
-    await page.getByRole("button", { name: "Confirmar devolución" }).click();
+    await page.getByRole("button", { name: /Registrar la devolución sin reembolso/ }).click();
     await page.getByTestId("return-result").waitFor();
     expect((await one("select coalesce(sum(quantity),0)::int q from return_items ri join returns r on r.id=ri.return_id where r.sale_id=$1", [saleId])).q === 3, "all 3 units returned in total");
     await page.getByText("Ya devuelto completo").waitFor();
@@ -310,7 +313,7 @@ export async function run(c) {
     await page.getByLabel("Número de venta").fill(String(saleId));
     await page.getByRole("button", { name: "Buscar venta" }).click();
     await page.getByRole("heading", { name: `Venta #${saleId}` }).waitFor();
-    await page.getByRole("cell", { name: "PENDIENTE DE REEMBOLSO" }).first().waitFor();
+    await page.getByRole("cell", { name: "PENDIENTE", exact: true }).first().waitFor();
   });
 
   await test("SCR-17.cash_session_closes_cleanly_after_the_whole_flow", "e2e", async () => {

@@ -197,6 +197,20 @@ export async function salesSummary(data: unknown) {
     const r = returnsRows.find((x) => x.status === status);
     return { count: r?.count ?? 0, total: r?.total ?? "0" };
   };
+  // Money actually handed back in the range, by method and by PAYMENT date (a refund can be paid days after its return)
+  const paidRows = await db
+    .select({ method: settlementsTable.paymentMethod, count: sql<number>`count(*)::int`, total: sql<string>`coalesce(sum(${settlementsTable.amount}), 0)::text` })
+    .from(settlementsTable)
+    .where(and(gte(settlementsTable.paidAt, range.start), lt(settlementsTable.paidAt, range.endExclusive)))
+    .groupBy(settlementsTable.paymentMethod);
+  const paidBy = (m: "cash" | "card") => {
+    const r = paidRows.find((x) => x.method === m);
+    return { count: r?.count ?? 0, total: r?.total ?? "0" };
+  };
+  const [owed] = await db
+    .select({ count: sql<number>`count(*)::int`, total: sql<string>`coalesce(sum(${returnsTable.totalRefund}), 0)::text` })
+    .from(returnsTable)
+    .where(eq(returnsTable.refundStatus, "pending"));
   return {
     from: range.from,
     to: range.to,
@@ -210,6 +224,10 @@ export async function salesSummary(data: unknown) {
       paid: ret("paid"),
       legacy: ret("legacy_unspecified"),
     },
+    // by payment date: cash left a register, card was refunded on the terminal (informational, never subtracted from cash)
+    refundsPaid: { cash: paidBy("cash"), card: paidBy("card") },
+    // still owed to customers right now, whatever the date of the return
+    refundsOwed: { count: owed?.count ?? 0, total: owed?.total ?? "0" },
   };
 }
 
@@ -227,4 +245,58 @@ export async function salesByRange(startRaw: unknown, endRaw: unknown) {
     .where(and(gte(salesTable.createdAt, start), lt(salesTable.createdAt, end)))
     .orderBy(desc(salesTable.createdAt))
     .limit(1000);
+}
+
+/**
+ * Everything the return voucher prints, from PostgreSQL only: the return, its lines as sold (the name stored with the sale, or the
+ * catalogue name for old sales) and, when the refund was paid, how/when and who attended and authorized it.
+ */
+export async function getReturnVoucher(returnIdRaw: unknown) {
+  const returnId = parseId(returnIdRaw, "DEVOLUCION_INVALIDA", "La devolución");
+  const authorizer = alias(usersTable, "authorizer");
+  const payer = alias(usersTable, "payer");
+  const [ret] = await db
+    .select({
+      id: returnsTable.id,
+      saleId: returnsTable.saleId,
+      createdAt: returnsTable.createdAt,
+      reason: returnsTable.reason,
+      status: returnsTable.refundStatus,
+      totalRefund: returnsTable.totalRefund,
+      processedByName: usersTable.name,
+    })
+    .from(returnsTable)
+    .leftJoin(usersTable, eq(returnsTable.processedBy, usersTable.id))
+    .where(eq(returnsTable.id, returnId));
+  if (!ret) throw new BusinessError("DEVOLUCION_NO_ENCONTRADA", "La devolución no existe");
+
+  const items = await db
+    .select({
+      name: sql<string>`coalesce(${saleItemsTable.productName}, ${productsTable.name}, 'Producto #' || ${returnItemsTable.productId})`,
+      sku: sql<string | null>`coalesce(${saleItemsTable.productSku}, ${productsTable.sku})`,
+      quantity: returnItemsTable.quantity,
+      unitPrice: saleItemsTable.unitPrice,
+      refundAmount: returnItemsTable.refundAmount,
+    })
+    .from(returnItemsTable)
+    .innerJoin(saleItemsTable, eq(returnItemsTable.saleItemId, saleItemsTable.id))
+    .leftJoin(productsTable, eq(returnItemsTable.productId, productsTable.id))
+    .where(eq(returnItemsTable.returnId, returnId))
+    .orderBy(returnItemsTable.id);
+
+  const [s] = await db
+    .select({
+      method: settlementsTable.paymentMethod,
+      amount: settlementsTable.amount,
+      paidAt: settlementsTable.paidAt,
+      reference: settlementsTable.externalReference,
+      authorizedByName: authorizer.name,
+      paidByName: payer.name,
+    })
+    .from(settlementsTable)
+    .leftJoin(authorizer, eq(settlementsTable.authorizedBy, authorizer.id))
+    .leftJoin(payer, eq(settlementsTable.processedBy, payer.id))
+    .where(eq(settlementsTable.returnId, returnId));
+
+  return { ...ret, items, settlement: s ?? null };
 }

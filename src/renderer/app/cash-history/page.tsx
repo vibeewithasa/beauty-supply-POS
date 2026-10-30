@@ -116,14 +116,16 @@ export default function CashHistoryPage() {
       ["Ventas en efectivo", d.sales.cash.count, d.sales.cash.total],
       ["Otros ingresos", d.movements.manualIn.count, d.movements.manualIn.total],
       ["Retiros", d.movements.manualOut.count, d.movements.manualOut.total],
+      ["Reembolsos en efectivo (salieron de la caja)", d.refunds.cash.count, d.refunds.cash.total],
       ["Efectivo esperado al cierre (saldo de caja)", "", d.expected.registerBalance],
       ["Efectivo esperado según registros", "", d.expected.fromRecords],
       ["Efectivo contado", "", d.closing.counted ?? ""],
       ["Diferencia", "", d.closing.difference ?? ""],
       ["Ventas con tarjeta (informativo)", d.sales.card.count, d.sales.card.total],
       ["Total de ventas", d.sales.count, ""],
+      ["Reembolsos con tarjeta pagados en esta caja (informativo)", d.refunds.card.count, d.refunds.card.total],
       ["Reembolsos pendientes (no pagados)", d.returns.pending.count, d.returns.pending.total],
-      ["Reembolsos pagados", d.returns.paid.count, d.returns.paid.total],
+      ["Reembolsos pagados (de las ventas de esta caja)", d.returns.paid.count, d.returns.paid.total],
       ["Devoluciones anteriores al control", d.returns.legacy.count, d.returns.legacy.total],
     ];
     const blob = new Blob([toCsv(rows)], { type: "text/csv;charset=utf-8" });
@@ -285,6 +287,7 @@ export default function CashHistoryPage() {
                 <Line label={`Ventas en efectivo (${detail.sales.cash.count})`} value={money(detail.sales.cash.total)} id="cs-cash-sales" />
                 <Line label={`Otros ingresos (${detail.movements.manualIn.count})`} value={money(detail.movements.manualIn.total)} id="cs-manual-in" />
                 <Line label={`Retiros (${detail.movements.manualOut.count})`} value={"-" + money(detail.movements.manualOut.total)} id="cs-manual-out" />
+                <Line label={`Reembolsos en efectivo (${detail.refunds.cash.count})`} value={"-" + money(detail.refunds.cash.total)} id="cs-cash-refunds" />
                 <Line label={detail.session.closedAt ? "Efectivo esperado al cierre" : "Efectivo esperado ahora"} value={money(detail.expected.registerBalance)} id="cs-expected" strong />
                 {detail.closing.counted !== null && <Line label="Efectivo contado" value={money(detail.closing.counted)} id="cs-counted" />}
                 {detail.closing.difference !== null && (
@@ -307,11 +310,23 @@ export default function CashHistoryPage() {
                 <p className="text-xs text-muted-foreground">Las ventas con tarjeta son informativas: no entran al efectivo de la caja.</p>
               </section>
 
+              {(detail.refunds.cash.count > 0 || detail.refunds.card.count > 0) && (
+                <section aria-label="Reembolsos pagados" className="space-y-1">
+                  <h3 className="font-semibold">Reembolsos pagados en esta caja</h3>
+                  {detail.refunds.cash.count > 0 && <Line label={`En efectivo (${detail.refunds.cash.count})`} value={"-" + money(detail.refunds.cash.total)} id="cs-refunds-cash" />}
+                  {detail.refunds.card.count > 0 && <Line label={`Con tarjeta (${detail.refunds.card.count})`} value={money(detail.refunds.card.total)} id="cs-refunds-card" />}
+                  <p className="text-xs text-muted-foreground">
+                    Los de efectivo ya están descontados del efectivo esperado. Los de tarjeta se hicieron en la terminal: son informativos y no restan efectivo.
+                    Cuenta la fecha de pago, que puede ser distinta de la fecha de la devolución.
+                  </p>
+                </section>
+              )}
+
               {(detail.returns.pending.count > 0 || detail.returns.paid.count > 0 || detail.returns.legacy.count > 0) && (
                 <section aria-label="Devoluciones" className="space-y-1">
                   <h3 className="font-semibold">Devoluciones registradas de estas ventas</h3>
                   {detail.returns.pending.count > 0 && <Line label={`Reembolsos PENDIENTES (${detail.returns.pending.count})`} value={money(detail.returns.pending.total)} id="cs-returns-pending" />}
-                  {detail.returns.paid.count > 0 && <Line label={`Reembolsos pagados (${detail.returns.paid.count})`} value={money(detail.returns.paid.total)} id="cs-returns-paid" />}
+                  {detail.returns.paid.count > 0 && <Line label={`Reembolsos pagados de estas ventas (${detail.returns.paid.count})`} value={money(detail.returns.paid.total)} id="cs-returns-paid" />}
                   {detail.returns.legacy.count > 0 && <Line label={`Anteriores al control de reembolsos (${detail.returns.legacy.count})`} value={money(detail.returns.legacy.total)} id="cs-returns-legacy" />}
                   <p className="text-xs text-amber-800">Un reembolso pendiente es dinero que se debe al cliente: NO está pagado ni descontado de la caja.</p>
                 </section>

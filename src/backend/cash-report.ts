@@ -14,6 +14,8 @@ export type CashReportData = {
   expected: { fromRecords: string; registerBalance: string; reconciles: boolean };
   closing: { counted: string | null; difference: string | null };
   returns: { pending: { count: number; total: string }; paid: { count: number; total: string }; legacy: { count: number; total: string } };
+  /** Refunds whose money was handed back while this register was open (optional: summaries made before refunds existed). */
+  refunds?: { cash: { count: number; total: string }; card: { count: number; total: string } };
 };
 
 /** "+$5.00" / "-$5.00" / "$0.00" for a signed numeric text. */
@@ -33,6 +35,11 @@ export function renderCashReportHtml(data: CashReportData, businessName: string,
     const d = data.closing.difference;
     diffLabel = /^-/.test(formatMoney(d)) ? "Faltante" : formatMoney(d) === "$0.00" ? "Sin diferencia" : "Sobrante";
   }
+  const cashRefunds = data.refunds?.cash ?? { count: 0, total: "0" };
+  const cardRefunds = data.refunds?.card ?? { count: 0, total: "0" };
+  const refundLines: string[] = [];
+  if (cashRefunds.count) refundLines.push(row(`En efectivo (${cashRefunds.count})`, "-" + formatMoney(cashRefunds.total)));
+  if (cardRefunds.count) refundLines.push(row(`Con tarjeta (${cardRefunds.count})`, formatMoney(cardRefunds.total)));
   const returnsLines: string[] = [];
   if (data.returns.pending.count) returnsLines.push(row(`Reembolsos PENDIENTES (${data.returns.pending.count})`, formatMoney(data.returns.pending.total)));
   if (data.returns.paid.count) returnsLines.push(row(`Reembolsos pagados (${data.returns.paid.count})`, formatMoney(data.returns.paid.total)));
@@ -74,6 +81,7 @@ ${row("Efectivo inicial", formatMoney(data.initialAmount))}
 ${row(`Ventas en efectivo (${data.sales.cash.count})`, formatMoney(data.sales.cash.total))}
 ${row(`Otros ingresos (${data.movements.manualIn.count})`, formatMoney(data.movements.manualIn.total))}
 ${row(`Retiros (${data.movements.manualOut.count})`, "-" + formatMoney(data.movements.manualOut.total))}
+${row(`Reembolsos en efectivo (${cashRefunds.count})`, "-" + formatMoney(cashRefunds.total))}
 ${row(closed ? "Efectivo esperado al cierre" : "Efectivo esperado ahora", formatMoney(data.expected.registerBalance), true)}
 ${closed ? row("Efectivo contado", formatMoney(data.closing.counted as string)) : ""}
 ${closed && data.closing.difference !== null ? row(`Diferencia (${diffLabel})`, formatSigned(data.closing.difference), true) : ""}
@@ -83,7 +91,8 @@ ${data.expected.reconciles ? "" : `<div class="warn">Los registros no concilian 
 ${row("Total de ventas", String(data.sales.count))}
 ${row(`Con tarjeta (${data.sales.card.count})`, formatMoney(data.sales.card.total))}
 <div class="note">Las ventas con tarjeta son informativas: no entran al efectivo de la caja.</div>
-${returnsLines.length ? `<hr><h2>Devoluciones registradas</h2>${returnsLines.join("\n")}<div class="note">Un reembolso pendiente es dinero que se debe al cliente: NO está pagado ni descontado de la caja.</div>` : ""}
+${refundLines.length ? `<hr><h2>Reembolsos pagados en esta caja</h2>${refundLines.join("\n")}<div class="note">Los de efectivo ya están descontados arriba. Los de tarjeta se hicieron en la terminal: son informativos y no restan efectivo.</div>` : ""}
+${returnsLines.length ? `<hr><h2>Devoluciones de las ventas de esta caja</h2>${returnsLines.join("\n")}<div class="note">Un reembolso pendiente es dinero que se debe al cliente: NO está pagado ni descontado de la caja.</div>` : ""}
 <hr>
 <div class="small">Documento interno · no es una factura fiscal</div>
 </div></body></html>`;

@@ -56,6 +56,8 @@ declare global {
         createWithRefund(data: any, adminPin: string): Promise<any>;
         settleRefund(data: any, adminPin: string): Promise<any>;
         getAll(): Promise<any[]>;
+        previewVoucher(returnId: number): Promise<any>;
+        printVoucher(returnId: number): Promise<any>;
         getSaleForReturn(saleId: number): Promise<any>;
       };
       users: {

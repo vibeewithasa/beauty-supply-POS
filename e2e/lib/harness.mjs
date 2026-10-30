@@ -264,7 +264,14 @@ export function makeData(db, runId) {
 // ---------------------------------------------------------------- UI helpers
 export const ui = {
   async login(page, pin) {
-    for (const d of pin) await page.getByRole("button", { name: d, exact: true }).click();
+    // The keypad shows one bullet per digit. A page that reloads while the digits are being clicked (the dev server can
+    // re-optimize and reload) loses some of them: check the display and retype instead of submitting a truncated PIN.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      for (const d of pin) await page.getByRole("button", { name: d, exact: true }).click();
+      const shown = await page.locator("div.font-mono").first().innerText().catch(() => "");
+      if ((shown.match(/•/g) || []).length === pin.length) break;
+      await page.getByRole("button", { name: "Limpiar" }).click().catch(() => {});
+    }
     await page.getByRole("button", { name: "Iniciar Sesión" }).click();
   },
   nav: (page, label) => page.getByRole("link", { name: label, exact: true }).click(),

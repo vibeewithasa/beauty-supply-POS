@@ -109,6 +109,8 @@ export default function CashPage() {
   // Ventas por método: tomadas de las ventas de la sesión (no del texto de los movimientos)
   const salesCash = summary ? parseFloat(summary.sales.cash.total) : 0;
   const salesCard = summary ? parseFloat(summary.sales.card.total) : 0;
+  // Reembolsos pagados desde esta caja (efectivo salió de la caja; tarjeta se hizo en la terminal y no resta efectivo)
+  const refundsCash = summary ? parseFloat(summary.refunds.cash.total) : 0;
 
   const handleOpenCash = async () => {
     if (!user) return;
@@ -238,7 +240,7 @@ export default function CashPage() {
         ) : (
           <div className="space-y-6">
             {/* Status */}
-            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-7 gap-4">
               <Card className="card-pos-stat">
                 <div>
                   <p className="card-pos-stat-label">Monto Inicial</p>
@@ -268,6 +270,14 @@ export default function CashPage() {
                   <p className="card-pos-stat-label">Ventas Tarjeta</p>
                   <p className="card-pos-stat-value mt-2 text-blue-600">
                     ${salesCard.toFixed(2)}
+                  </p>
+                </div>
+              </Card>
+              <Card className="card-pos-stat">
+                <div>
+                  <p className="card-pos-stat-label">Reembolsos Efectivo</p>
+                  <p className="card-pos-stat-value mt-2 text-red-600" data-testid="cash-refunds">
+                    -${refundsCash.toFixed(2)}
                   </p>
                 </div>
               </Card>

@@ -40,6 +40,8 @@ const CALLS = {
   "returns:create": "api.returns.create({saleId:999999,items:[],reason:'x'})",
   "returns:getAll": "api.returns.getAll()",
   "returns:createWithRefund": "api.returns.createWithRefund({saleId:999999,reason:'x',items:[{saleItemId:1,quantity:1}],payment:{method:'card',confirmed:true},operationId:'op-sec-unauth-01'},'0000')",
+  "returns:previewVoucher": "api.returns.previewVoucher(999999)",
+  "returns:printVoucher": "api.returns.printVoucher(999999)",
   "returns:settleRefund": "api.returns.settleRefund({returnId:999999,payment:{method:'card',confirmed:true},operationId:'op-sec-unauth-02'},'0000')",
   "users:getAll": "api.users.getAll()",
   "users:create": "api.users.create({name:'SEC-X',role:'admin',pin:'1234'})",
@@ -76,7 +78,7 @@ const ADMIN_ONLY = [
 const VENDOR_READS = [
   "products:getAll", "products:findBySkuOrBarcode", "cash:getActiveSession", "cash:getMovements", "sales:getAll",
   "sales:getById", "returns:getAll", "returns:getSaleForReturn", "sales:list", "sales:getDetail", "receipts:preview", "receipts:print",
-  "cash:listSessions", "cash:getSessionSummary", "cash:previewSummary", "cash:printSummary",
+  "cash:listSessions", "cash:getSessionSummary", "cash:previewSummary", "cash:printSummary", "returns:previewVoucher", "returns:printVoucher",
 ];
 
 export async function run(c) {
@@ -102,7 +104,7 @@ export async function run(c) {
   await test("A2.public_me_without_session_is_null", "security", async () => {
     expect((await me()) === null, "me() must be null before login");
   });
-  await test("A3.all_42_protected_channels_rejected_without_session", "security", async () => {
+  await test("A3.all_44_protected_channels_rejected_without_session", "security", async () => {
     const before = await userCount();
     const leaks = [];
     for (const [ch, expr] of Object.entries(CALLS)) { const r = await ipc(page, expr); if (!unauthenticated(r)) leaks.push(`${ch}:${r.ok ? "ALLOWED" : r.err}`); }
@@ -121,7 +123,7 @@ export async function run(c) {
   await test("B2.vendor_allowed_operations_work", "security", async () => {
     const bad = [];
     // returns:getSaleForReturn(999999) reaches its handler and answers a business error (the sale does not exist)
-    for (const ch of VENDOR_READS) { const r = await ipc(page, CALLS[ch]); if (!r.ok && !/\[(VENTA_NO_ENCONTRADA|CAJA_NO_ENCONTRADA)\]/.test(r.err)) bad.push(ch + ":" + r.err); }
+    for (const ch of VENDOR_READS) { const r = await ipc(page, CALLS[ch]); if (!r.ok && !/\[(VENTA_NO_ENCONTRADA|CAJA_NO_ENCONTRADA|DEVOLUCION_NO_ENCONTRADA)\]/.test(r.err)) bad.push(ch + ":" + r.err); }
     expect(bad.length === 0, bad.join(" | "));
   });
   await test("B3.vendor_rejected_on_all_19_admin_channels", "security", async () => {

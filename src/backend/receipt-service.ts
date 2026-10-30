@@ -19,6 +19,8 @@ import type { Viewer } from "./sales-history";
 import { getBusinessSettings } from "./settings-service";
 import { renderReceiptHtml } from "./receipt";
 import { renderCashReportHtml } from "./cash-report";
+import { renderReturnVoucherHtml } from "./return-voucher";
+import { getReturnVoucher } from "./read-service";
 import { getCashSessionSummary } from "./cash-summary";
 import type { ReceiptData } from "./receipt";
 import type { PaperWidth } from "./settings-validation";
@@ -156,6 +158,24 @@ export async function previewCashSummary(viewer: Viewer, sessionId: unknown) {
 export async function printCashSummary(viewer: Viewer, sessionId: unknown): Promise<PrintResult> {
   const { html, width, id } = await buildCashReport(viewer, sessionId);
   return runPrint(html, width, `cash-summary-${id}`);
+}
+
+// ---------------------------------------------------------------- return voucher
+async function buildReturnVoucher(returnId: unknown) {
+  const data = await getReturnVoucher(returnId); // DEVOLUCION_INVALIDA / DEVOLUCION_NO_ENCONTRADA
+  const settings = await getBusinessSettings();
+  const width = settings.paperWidth as PaperWidth;
+  return { html: renderReturnVoucherHtml(data, settings.name, width), width, id: data.id };
+}
+
+export async function previewReturnVoucher(returnId: unknown) {
+  const { html, width, id } = await buildReturnVoucher(returnId);
+  return { html, width, folio: id };
+}
+
+export async function printReturnVoucher(returnId: unknown): Promise<PrintResult> {
+  const { html, width, id } = await buildReturnVoucher(returnId);
+  return runPrint(html, width, `return-${id}`);
 }
 
 /** Installed printers (administrators only: used by the settings screen). */

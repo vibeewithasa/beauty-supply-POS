@@ -26,6 +26,8 @@ interface Summary {
     paid: { count: number; total: string };
     legacy: { count: number; total: string };
   };
+  refundsPaid: { cash: { count: number; total: string }; card: { count: number; total: string } };
+  refundsOwed: { count: number; total: string };
 }
 
 const METHOD_LABEL: Record<string, string> = { cash: "Efectivo", card: "Tarjeta" };
@@ -91,6 +93,11 @@ export default function ReportsPage() {
       ["Reembolso pendiente", summary.returns.pending.count, summary.returns.pending.total],
       ["Reembolso pagado", summary.returns.paid.count, summary.returns.paid.total],
       ["Anterior al control de reembolsos", summary.returns.legacy.count, summary.returns.legacy.total],
+      [],
+      ["Reembolsos pagados (por fecha de pago)", "Cantidad", "Total"],
+      ["Pagados en efectivo (salieron de la caja)", summary.refundsPaid.cash.count, summary.refundsPaid.cash.total],
+      ["Pagados por tarjeta (informativo, hechos en la terminal)", summary.refundsPaid.card.count, summary.refundsPaid.card.total],
+      ["Pendientes de pago ahora (cualquier fecha)", summary.refundsOwed.count, summary.refundsOwed.total],
     ];
     const blob = new Blob([toCsv(rows)], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -193,7 +200,7 @@ export default function ReportsPage() {
             </Card>
 
             <Card className="p-4">
-              <h2 className="font-semibold mb-1">Devoluciones registradas en el rango</h2>
+              <h2 className="font-semibold mb-1">Devoluciones registradas en el rango (por fecha de devolución)</h2>
               <p className="text-xs text-muted-foreground mb-3">
                 Una devolución registrada no es dinero entregado: los reembolsos pendientes siguen debiéndose al cliente.
               </p>
@@ -217,6 +224,34 @@ export default function ReportsPage() {
                       <td>{money(summary.returns.legacy.total)}</td>
                     </tr>
                   )}
+                </tbody>
+              </table>
+            </Card>
+
+            <Card className="p-4">
+              <h2 className="font-semibold mb-1">Reembolsos pagados en el rango (por fecha de pago)</h2>
+              <p className="text-xs text-muted-foreground mb-3">
+                Un reembolso puede pagarse días después de la devolución. El efectivo sale de la caja; el de tarjeta se hace en la terminal y es
+                informativo: no resta efectivo. Un reembolso se cuenta una sola vez.
+              </p>
+              <table className="table-pos w-full text-sm" aria-label="Reembolsos pagados">
+                <thead><tr><th>Forma de pago</th><th>Cantidad</th><th>Total</th></tr></thead>
+                <tbody>
+                  <tr data-testid="rp-paid-cash">
+                    <td className="text-green-700 font-semibold">Pagados en efectivo (salieron de la caja)</td>
+                    <td>{summary.refundsPaid.cash.count}</td>
+                    <td>{money(summary.refundsPaid.cash.total)}</td>
+                  </tr>
+                  <tr data-testid="rp-paid-card">
+                    <td className="text-blue-700 font-semibold">Pagados por tarjeta (en la terminal)</td>
+                    <td>{summary.refundsPaid.card.count}</td>
+                    <td>{money(summary.refundsPaid.card.total)}</td>
+                  </tr>
+                  <tr data-testid="rp-owed">
+                    <td className="text-amber-700 font-semibold">Pendientes de pago ahora (cualquier fecha)</td>
+                    <td>{summary.refundsOwed.count}</td>
+                    <td>{money(summary.refundsOwed.total)}</td>
+                  </tr>
                 </tbody>
               </table>
             </Card>

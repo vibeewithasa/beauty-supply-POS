@@ -133,10 +133,16 @@ try {
     await page.getByRole("button", { name: "Buscar venta" }).click();
     await page.getByLabel(`Cantidad a devolver de ${product.name}`).fill("1");
     await page.getByLabel("Motivo", { exact: true }).fill("Prueba empaquetada");
-    await page.getByRole("button", { name: "Revisar devolución" }).click();
-    await page.getByRole("button", { name: "Confirmar devolución" }).click();
-    await page.getByTestId("return-result").getByText(/PENDIENTE DE REEMBOLSO/).waitFor();
-    expect((await one("select refund_status from returns where sale_id=$1", [sale.id])).refund_status === "pending", "pending refund persisted");
+    // the authorized refund: cash handed back, confirmed, administrator PIN typed in the authorization dialog
+    await page.locator("#rf-method-cash").click();
+    await page.locator("#rf-confirm").check();
+    await page.getByRole("button", { name: "Confirmar devolución y reembolso" }).click();
+    await page.getByRole("dialog").locator("#rf-admin-pin").fill(admin.pin);
+    await page.getByRole("button", { name: "Autorizar y registrar" }).click();
+    await page.getByTestId("return-result").getByText(/PAGADO EN EFECTIVO/).waitFor({ timeout: 10000 });
+    const refund = await one("select r.refund_status, s.payment_method, s.authorized_by, s.processed_by, s.amount from returns r join refund_settlements s on s.return_id=r.id where r.sale_id=$1", [sale.id]);
+    expect(refund && refund.refund_status === "paid" && refund.payment_method === "cash" && Number(refund.amount) === 10 && refund.authorized_by === admin.id, "cash refund persisted and authorized: " + JSON.stringify(refund));
+    expect(Number((await one("select current_amount from cash_sessions where closed_at is null")).current_amount) === 60, "50 opening + 20 sale - 10 refund");
 
     await ui.nav(page, "Reportes");
     await page.getByTestId("rp-count").waitFor();
