@@ -197,21 +197,25 @@ export function buildMain() {
 // Suites may export `env` to override these. The default raises the login attempt limit so unrelated
 // tests cannot lock the login by accident; the hardening suite runs with real, small limits.
 const DEFAULT_APP_ENV = { POS_LOGIN_MAX_ATTEMPTS: "1000" };
-export async function launchApp(runDb, db, artifacts, extraEnv = {}) {
+export async function launchApp(runDb, db, artifacts, extraEnv = {}, opts = {}) {
   const env = { ...process.env, ...DEFAULT_APP_ENV, ...extraEnv, DATABASE_URL: urlFor(runDb, "e2e_app"), POS_DEV_PORT: String(E2E_PORT) };
   delete env.ELECTRON_RUN_AS_NODE;
+  // opts.noDatabaseUrl: the application must find its connection the way an installed one does (config.json), not here
+  if (opts.noDatabaseUrl) delete env.DATABASE_URL;
   // A private user-data folder per launch: the single-instance lock and the local storage are never shared with a
   // developer's own running app (which would otherwise make the test instance quit immediately).
-  const userData = fs.mkdtempSync(path.join(os.tmpdir(), "pos-e2e-ud-"));
+  // (opts.userData reuses a folder: the persisted login counter and the configuration then survive a restart, like the real app)
+  const userData = opts.userData ?? fs.mkdtempSync(path.join(os.tmpdir(), "pos-e2e-ud-"));
   const app = await _electron.launch({
     executablePath: path.join(ROOT, "node_modules/electron/dist/electron.exe"),
-    args: [".", "--user-data-dir=" + userData], cwd: ROOT, env, timeout: 60000,
+    args: [".", "--user-data-dir=" + userData, ...(opts.extraArgs ?? [])], cwd: ROOT, env, timeout: 60000,
   });
   const mainLog = [];
   const proc = app.process();
   for (const s of [proc.stdout, proc.stderr]) s && s.on("data", (b) => mainLog.push(...String(b).split(/\r?\n/).filter(Boolean)));
   try {
-  const page = await waitFor(async () => app.windows().find((w) => w.url().startsWith(APP_URL)), 30000);
+  // opts.raw: any first window (the setup or failure window instead of the application)
+  const page = await waitFor(async () => (opts.raw ? app.windows()[0] : app.windows().find((w) => w.url().startsWith(APP_URL))), 30000);
   if (!page) throw new Error("main window did not appear");
   const consoleErrors = [];
   const watch = (p) => {
@@ -219,6 +223,10 @@ export async function launchApp(runDb, db, artifacts, extraEnv = {}) {
     p.on("pageerror", (e) => consoleErrors.push("pageerror: " + e.message.slice(0, 240)));
   };
   watch(page);
+  if (opts.raw) {
+    await page.waitForLoadState("domcontentloaded");
+    return { app, page, mainLog, consoleErrors, watch, userData };
+  }
   const journal = JSON.parse(fs.readFileSync(path.join(ROOT, "drizzle/meta/_journal.json"), "utf8")).entries.length;
   const migrated = await waitFor(async () => (await db.query("select count(*)::int n from drizzle.__drizzle_migrations")).rows[0].n >= journal, 20000);
   if (!migrated) throw new Error("startup migrations did not complete in the run database");
@@ -226,7 +234,7 @@ export async function launchApp(runDb, db, artifacts, extraEnv = {}) {
   await page.waitForLoadState("domcontentloaded");
   fs.mkdirSync(artifacts, { recursive: true });
   return { app, page, mainLog, consoleErrors, watch, userData };
-  } catch (e) { try { await app.close(); } catch {} fs.rmSync(userData, { recursive: true, force: true }); throw e; }
+  } catch (e) { try { await app.close(); } catch {} if (!opts.userData) fs.rmSync(userData, { recursive: true, force: true }); throw e; }
 }
 
 // ---------------------------------------------------------------- synthetic data

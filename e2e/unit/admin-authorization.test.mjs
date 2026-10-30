@@ -84,7 +84,11 @@ test("failures lock, a correct PIN is refused while locked, and the lock expires
   assert.equal(events.loads, loads, "while locked the users are not even read");
   c.advance(1001);
   assert.deepEqual(await authorizeAdminPin(deps, "246810"), { adminId: 1 }, "recovered after the lock");
-  for (let i = 0; i < 2; i++) assert.equal(await code(authorizeAdminPin(deps, "000000")), "AUTORIZACION_INVALIDA", "success reset the counter");
+  // the success gave nothing back: one more failure and the lock is back (and longer)
+  assert.equal(await code(authorizeAdminPin(deps, "000000")), "AUTORIZACION_INVALIDA");
+  assert.equal(await code(authorizeAdminPin(deps, "246810")), "AUTORIZACION_BLOQUEADA", "still counting from the earlier failures");
+  c.advance(60_001 + 2000);
+  assert.deepEqual(await authorizeAdminPin(deps, "246810"), { adminId: 1 }, "after a quiet period everything starts again");
 });
 
 test("the budget is one for the whole installation: it does not depend on which PIN or user is being guessed", async () => {

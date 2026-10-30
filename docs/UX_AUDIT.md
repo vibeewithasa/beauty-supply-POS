@@ -97,3 +97,13 @@ No physical printer, scanner or touch screen was used.
 2. Closing-day summary and its printable report.
 3. Backups and restore procedure; dependency upgrade (Electron, `drizzle-orm`, `react-router`) with the suites as the net.
 4. Stored cash-received/change if the owner wants it on the ticket.
+
+## Sprint 06: pilot walkthrough (1024x768)
+
+The pilot suite (`npm run test:pilot`) walked the store day through the real window and measured the main screens at 1024x768:
+
+- Pagar stays fully visible and uncovered with a 14-line cart (44 px or more high); clearing the cart asks first.
+- Every button and link of the visited screens is at least 36 px; the login keypad is 56x48 px or more. (Found and fixed: the voucher icon button in the returns history was 32 px wide.)
+- Found and fixed: the seven cash stat cards at 1024 px made large amounts touch the card edge; the grid is now 2 / 4 / 7 columns (small / medium / extra large).
+- Observed, not changed: the sales screen reads the catalogue when it opens, so a product created behind its back (another terminal, SQL) appears after reopening the screen; creating it from Productos then going to Vender works because the screen remounts.
+- Not covered: a real touch screen, a physical thermal printer and a barcode reader (see docs/PILOT_CHECKLIST.md).

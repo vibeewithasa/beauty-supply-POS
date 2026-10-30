@@ -7,7 +7,7 @@ import path from "node:path";
 import { pool } from "./db";
 import { checkSchema, describeSchemaState } from "../../scripts/lib/schema-state.mjs";
 
-export type StartupCheck = { ok: true } | { ok: false; headline: string; detail: string };
+export type StartupCheck = { ok: true } | { ok: false; kind: "schema" | "connection"; headline: string; detail: string };
 
 export async function verifyDatabaseSchema(appPath: string): Promise<StartupCheck> {
   try {
@@ -18,11 +18,11 @@ export async function verifyDatabaseSchema(appPath: string): Promise<StartupChec
       return { ok: true };
     }
     console.error(`SCHEMA_CHECK_FAILED: status=${state.status} required=${state.required} applied=${state.applied} missing=${state.missing.join(",")} unknown=${state.unknown}`);
-    return { ok: false, ...d };
+    return { ok: false, kind: "schema", ...d };
   } catch (error) {
     // never show connection details: the log keeps only the driver's error code/message class
     const code = (error as { code?: string } | null)?.code ?? "desconocido";
     console.error(`SCHEMA_CHECK_ERROR: no se pudo leer el estado del esquema (código ${code})`);
-    return { ok: false, headline: "No se pudo comprobar la base de datos", detail: "Revisa que PostgreSQL esté activo y que la configuración sea correcta." };
+    return { ok: false, kind: "connection", headline: "No se pudo comprobar la base de datos", detail: "Revisa que PostgreSQL esté activo y que la configuración sea correcta." };
   }
 }

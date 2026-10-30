@@ -12,6 +12,7 @@ import { AuthError, BusinessError } from "./errors";
 import { describeUnexpected, guarded } from "./ipc-errors";
 import { PIN_LOGIN_RE, hashPin, isLegacyHash, verifyPin } from "./pin-hash";
 import { LoginLimiter, loadLimiterConfig } from "./login-limiter";
+import { LIMITER_FILE, loadLimiterState, saveLimiterState } from "./limiter-store";
 import { Gate, authorizeAdminPin } from "./admin-authorization";
 import type { Role } from "../common/types";
 
@@ -27,13 +28,14 @@ const FORBIDDEN = "No autorizado";
 const NO_SESSION = "Sesión no válida";
 const store = new SessionStore();
 
-// One limiter for the whole installation (the PIN space is tiny): another window cannot reset it.
-// POS_LOGIN_* overrides are honored only in development builds, never in a packaged app.
-const limiter = new LoginLimiter(loadLimiterConfig(app.isPackaged ? {} : process.env));
-// Administrator authorization (refund payments) has its OWN installation-wide counter. It must not share the login's: a
-// successful login resets that one, so a signed-in seller could alternate "4 guesses at the administrator PIN, then log in
-// with their own PIN" for ever. Here only a successful administrator authorization (or a quiet period) resets it.
-const authorizationLimiter = new LoginLimiter(loadLimiterConfig(app.isPackaged ? {} : process.env));
+// ONE limiter for every PIN check of the installation (login AND administrator authorization): the PIN space is tiny, the PIN is
+// the only identifier and a guess at an administrator PIN is the same guess through either door. Another window cannot reset it,
+// a success does not give attempts back (see login-limiter.ts) and it is persisted in the user data folder, so restarting the app
+// does not reset it either. POS_LOGIN_* overrides are honored only in development builds, never in a packaged app.
+const limiterConfig = loadLimiterConfig(app.isPackaged ? {} : process.env);
+const limiterFile = path.join(app.getPath("userData"), LIMITER_FILE);
+const limiter = new LoginLimiter(limiterConfig, Date.now, (state) => saveLimiterState(limiterFile, state));
+limiter.restore(loadLimiterState(limiterFile, Date.now(), limiterConfig));
 // PIN attempts are checked one at a time: a burst of parallel requests must not all pass the "not locked" check before the
 // first failure has been counted.
 const attemptGate = new Gate();
@@ -134,12 +136,12 @@ async function upgradeLegacyHash(userId: number, oldHash: string, pin: string) {
 /**
  * Authorizes ONE operation with the PIN of an active administrator (the operator's session is not touched).
  * The PIN is checked here, in main, against the users table; the renderer never names the administrator.
- * Returns only the administrator's id. Failed attempts count against an installation-wide limiter of its own.
+ * Returns only the administrator's id. Failed attempts count against the same installation-wide limiter as the login.
  */
 export async function authorizeAdmin(pin: unknown, operatorId: number): Promise<{ adminId: number }> {
   return authorizeAdminPin(
     {
-      limiter: authorizationLimiter,
+      limiter,
       gate: attemptGate,
       loadActiveUsers: () =>
         db

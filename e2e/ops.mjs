@@ -12,7 +12,7 @@ import {
   ROOT, urlFor, createRunDb, prepareRunDb, dropRunDb, connectRunDb, createRecorder, summarize, expect, scrub,
 } from "./lib/harness.mjs";
 import {
-  backupDatabase, inspectDatabase, listDump, findPgBin, pruneBackups, sha256File, withClient, urlWithDatabase,
+  backupDatabase, inspectDatabase, listDump, findPgBin, pruneBackups, sha256File, withClient, urlWithDatabase, copyToSecondLocation, validateSecondLocation, restoreToNewDatabase,
   createRuntimeRole, dropRuntimeRole, regrantRuntimeRole, runtimeGrantSql, backupFileName, parseConnection, DB_NAME_RE,
 } from "../scripts/lib/db-ops.mjs";
 
@@ -284,6 +284,89 @@ try {
     expect(r.code === 1 && /pos_<nombre>/.test(r.out), "only pos_* role names are accepted");
     const after = await withClient(urlWithDatabase(urlFor("x"), "postgres"), async (a) => (await a.query("select count(*)::int n from pg_roles")).rows[0].n, "e2e_ops_roles");
     expect(before === after, "no role was created: " + before + " -> " + after);
+  });
+  // ================================================================== second copy (Sprint 06, block B2)
+  await test("OPS-10.a_second_copy_is_made_verified_and_logged_and_the_database_can_be_recovered_from_it", "integration", async () => {
+    const primary = mkTmp("e2e ops primary ");
+    const second = path.join(mkTmp("e2e ops second parent "), "externo con espacios");
+    const r = cli("db-backup.mjs", ["--out", primary, "--label", "dos", "--second-copy", second], { DATABASE_URL: srcUrl });
+    expect(r.code === 0 && /Segunda copia verificada/.test(r.out), "CLI exit 0 and says the second copy was verified: " + scrub(r.out).slice(-300));
+    const dump = fs.readdirSync(primary).find((f) => f.endsWith(".dump"));
+    const sFiles = fs.readdirSync(second).sort();
+    expect(J(sFiles) === J([dump, dump.replace(/\.dump$/, ".summary.json")].sort()), "the dump and its summary are in the second location: " + sFiles.join());
+    expect(sha256File(path.join(second, dump)) === sha256File(path.join(primary, dump)), "identical SHA-256");
+    const log = fs.readFileSync(path.join(primary, "backup.log"), "utf8");
+    expect(/^\d{4}-\d{2}-\d{2}T[\d:.]+Z OK .* second=verified dir=/m.test(log), "the date and the result of both copies are logged: " + log.trim());
+    expect(!leaks(log) && !leaks(r.out), "no password or URL in the log or the output");
+    for (const f of sFiles) expect(f.endsWith(".dump") || !leaks(fs.readFileSync(path.join(second, f), "latin1")), "no secret in " + f);
+    // recovery FROM the second copy, into a new database, verified row by row
+    const target = "beauty_pos_e2e_second" + rnd();
+    restored.add(target);
+    const rr = cli("db-restore.mjs", ["--file", path.join(second, dump), "--target", target], { DATABASE_URL: srcUrl });
+    expect(rr.code === 0 && /tablas y filas=OK, huella del esquema=OK, migraciones aplicadas=OK/.test(rr.out), "restore from the second copy verified: " + scrub(rr.out).slice(-300));
+    const a = await withClient(srcUrl, (c) => inspectDatabase(c, { rows: true }), "e2e_ops_a");
+    const b = await withClient(urlWithDatabase(srcUrl, target), (c) => inspectDatabase(c, { rows: true }), "e2e_ops_b");
+    expect(J(a.counts) === J(b.counts) && J(a.rowHashes) === J(b.rowHashes) && a.schemaFingerprint === b.schemaFingerprint, "the recovered database equals the original");
+    await dropTestDb(target);
+  });
+  await test("OPS-11.the_second_location_is_never_overwritten_or_pruned_and_a_corrupt_copy_is_refused", "security", async () => {
+    const primary = mkTmp("e2e ops primary2 ");
+    const second = mkTmp("e2e ops second2 ");
+    fs.writeFileSync(path.join(second, "historico-viejo.dump"), "an old backup the tool did not make");
+    const r1 = await backupDatabase({ url: srcUrl, outDir: primary, label: "uno", secondCopyDir: second });
+    expect(r1.secondCopy.status === "verified", J(r1.secondCopy));
+    const copied = path.join(second, path.basename(r1.file));
+    // the same copy again is recognised, not rewritten
+    const again = copyToSecondLocation({ file: r1.file, destDir: second });
+    expect(again.status === "verified" && /ya existía/.test(again.message), "idempotent: " + J(again));
+    // a different file under the same name is NEVER replaced
+    const before = fs.readFileSync(copied);
+    fs.writeFileSync(copied, "tampered");
+    const clash = copyToSecondLocation({ file: r1.file, destDir: second });
+    expect(clash.status === "failed" && /no se sobrescribe/.test(clash.message) && fs.readFileSync(copied, "utf8") === "tampered", "a different existing file is kept as it is: " + J(clash));
+    // and a corrupt copy cannot be restored: the checksum of its summary does not match
+    const target = "beauty_pos_e2e_corrupt" + rnd();
+    let refused = null;
+    try { await restoreToNewDatabase({ url: srcUrl, file: copied, target }); } catch (e) { refused = e.code; }
+    expect(refused === "CHECKSUM", "restoring a corrupt second copy is refused: " + refused);
+    expect(!(await dbExists(target)), "and no database was left behind");
+    fs.writeFileSync(copied, before);
+    // retention only ever touches the PRIMARY location: nothing in the second one is deleted
+    for (let i = 0; i < 3; i++) await backupDatabase({ url: srcUrl, outDir: primary, label: "r" + i, keep: 1, secondCopyDir: second, now: new Date(Date.now() + (i + 1) * 2000) });
+    expect(fs.readdirSync(primary).filter((f) => f.endsWith(".dump")).length === 1, "the primary location kept only the newest");
+    const kept = fs.readdirSync(second).filter((f) => f.endsWith(".dump"));
+    expect(kept.length === 5 && kept.includes("historico-viejo.dump"), "the second location kept every historical backup (and the foreign file): " + kept.length);
+  });
+  await test("OPS-12.an_unavailable_second_location_is_reported_and_never_hides_the_valid_primary_backup", "integration", async () => {
+    const primary = mkTmp("e2e ops primary3 ");
+    const missingDrive = path.join(mkTmp("e2e ops gone "), "unplugged", "backups"); // the parent does not exist: a disconnected drive
+    const r = cli("db-backup.mjs", ["--out", primary, "--second-copy", missingDrive], { DATABASE_URL: srcUrl });
+    expect(r.code === 3 && /RESPALDO PRINCIPAL CORRECTO/.test(r.out) && /unavailable/.test(r.out), "exit code 3 with a clear message: " + r.code + " " + scrub(r.out).slice(-300));
+    const dump = fs.readdirSync(primary).find((f) => f.endsWith(".dump"));
+    expect(dump && sha256File(path.join(primary, dump)) === JSON.parse(fs.readFileSync(path.join(primary, dump.replace(/\.dump$/, ".summary.json")), "utf8")).sha256, "the primary backup is complete and verified");
+    expect(!fs.existsSync(path.dirname(missingDrive)), "nothing was created at the unavailable location");
+    expect(/second=unavailable/.test(fs.readFileSync(path.join(primary, "backup.log"), "utf8")), "the result is in the log");
+    // unreadable choices are refused with a stable code, not attempted
+    const rel = cli("db-backup.mjs", ["--out", primary, "--second-copy", path.join(ROOT, "backups-here")], { DATABASE_URL: srcUrl });
+    expect(rel.code === 1 && /fuera del proyecto/.test(rel.out) && !fs.existsSync(path.join(ROOT, "backups-here")), "a second copy inside the repository is refused");
+  });
+  await test("OPS-13.the_second_location_cannot_be_a_url_the_same_place_or_a_cloud_synchronized_folder", "security", async () => {
+    const primary = mkTmp("e2e ops primary4 ");
+    const code = (fn) => { try { fn(); return "OK"; } catch (e) { return e.code; } };
+    expect(code(() => validateSecondLocation("https://example.com/backups", primary)) === "SEGUNDA_COPIA_URL", "https");
+    expect(code(() => validateSecondLocation("s3://bucket/backups", primary)) === "SEGUNDA_COPIA_URL", "s3");
+    expect(code(() => validateSecondLocation("ftp://host/x", primary)) === "SEGUNDA_COPIA_URL", "ftp");
+    expect(code(() => validateSecondLocation(primary, primary)) === "SEGUNDA_COPIA_IGUAL", "the same folder");
+    expect(code(() => validateSecondLocation(path.join(primary, "sub"), primary)) === "SEGUNDA_COPIA_IGUAL", "a folder inside the primary one");
+    expect(code(() => validateSecondLocation("", primary)) === "SEGUNDA_COPIA_INVALIDA" && code(() => validateSecondLocation(null, primary)) === "SEGUNDA_COPIA_INVALIDA", "empty");
+    for (const name of ["OneDrive", "OneDrive - Empresa", "Dropbox", "Google Drive", "iCloudDrive", "MEGA", "Nextcloud"]) {
+      expect(code(() => validateSecondLocation(path.join(os.tmpdir(), name, "backups"), primary, {})) === "SEGUNDA_COPIA_NUBE", name + " is refused");
+    }
+    expect(code(() => validateSecondLocation(path.join(os.tmpdir(), "OneDrive", "backups"), primary, { POS_ALLOW_SYNCED_FOLDER: "1" })) === "OK", "the operator can accept it explicitly");
+    expect(code(() => validateSecondLocation(path.join(os.tmpdir(), "Respaldos externos", "pos"), primary, {})) === "OK", "a normal folder is fine");
+    // through backupDatabase the primary backup still succeeds and the refusal is reported
+    const r = await backupDatabase({ url: srcUrl, outDir: primary, label: "nube", secondCopyDir: "https://example.com/x" });
+    expect(r.secondCopy.status === "failed" && /no sube respaldos a internet/.test(r.secondCopy.message) && fs.existsSync(r.file), "refused second copy reported, primary kept: " + J(r.secondCopy));
   });
 } catch (e) {
   rec("ops.unexpected_error", "FAIL", scrub(String(e.stack || e)).split("\n").slice(0, 3).join(" | "), { kind: "integration" });

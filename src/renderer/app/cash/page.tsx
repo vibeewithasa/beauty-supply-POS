@@ -240,7 +240,7 @@ export default function CashPage() {
         ) : (
           <div className="space-y-6">
             {/* Status */}
-            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-7 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-4">
               <Card className="card-pos-stat">
                 <div>
                   <p className="card-pos-stat-label">Monto Inicial</p>

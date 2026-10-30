@@ -1,12 +1,18 @@
 import { app, BrowserWindow, Menu, session } from "electron";
 import path from "path";
-import { dbConfig } from "../backend/db";
-import { verifyDatabaseSchema } from "../backend/startup-check";
-import { registerIpcHandlers } from "../backend/ipc";
-import { trustedUrl } from "../backend/auth";
 import { resolveDevOrigin } from "../backend/dev-origin";
+import { isTrustedUrl } from "../backend/sender-guard";
+import { showSetupWindow } from "./setup-window";
 
+// NOTE: nothing that opens the database (db.ts, auth, ipc, startup-check) is imported statically: the connection string may be
+// protected by Windows (safeStorage), which only works after the app is ready. They are imported inside the ready handler.
 const isDev = !app.isPackaged;
+const trustedUrl = (url: string) =>
+  isTrustedUrl(url, {
+    packaged: app.isPackaged,
+    devOrigin: resolveDevOrigin(process.env, app.isPackaged),
+    appIndexPath: path.join(app.getAppPath(), "dist", "renderer", "index.html"),
+  });
 let mainWindow: BrowserWindow | null = null;
 
 // Ensure single instance: a second launch focuses the existing window instead of opening another one.
@@ -102,21 +108,40 @@ app.on("ready", async () => {
   denyAllPermissions();
   if (!isDev) Menu.setApplicationMenu(null);
 
+  // "Beauty POS.exe --reconfigure" opens the setup window even when the stored connection works (to point the app at another
+  // database, for example a restored copy). A DATABASE_URL in the environment is the operator's own and is never overridden here.
+  if (process.argv.includes("--reconfigure") && !process.env.DATABASE_URL) {
+    showSetupWindow("Reconfigurar la conexión a la base de datos", "Cambia la conexión y guarda: la aplicación se reiniciará con ella. Escribe la contraseña de nuevo (nunca se muestra la guardada).");
+    return;
+  }
+
+  const { dbConfig } = await import("../backend/db");
+
   if (!dbConfig.ok) {
     console.error("STARTUP_ABORTED: database configuration missing or invalid. IPC handlers not registered.");
-    showStartupFailure("Falta la configuración de la base de datos", dbConfig.reason);
+    // a stored (or missing) configuration can be fixed from the setup window; a bad DATABASE_URL belongs to the operator
+    if (dbConfig.fixableBySetup) showSetupWindow("Falta la configuración de la base de datos", dbConfig.reason);
+    else showStartupFailure("Falta la configuración de la base de datos", dbConfig.reason);
     return;
   }
   // The application never creates or migrates a schema: it only verifies it (see backend/startup-check.ts).
   console.log("Iniciando aplicación...");
+  const { verifyDatabaseSchema } = await import("../backend/startup-check");
   const schema = await verifyDatabaseSchema(app.getAppPath());
   if (!schema.ok) {
     console.error("STARTUP_ABORTED: database schema is not the one this version requires. IPC handlers not registered.");
-    showStartupFailure(schema.headline, schema.detail);
+    // PostgreSQL unreachable or refusing the stored credentials: the setup window can fix a stored connection.
+    // A missing/newer schema is never fixed from here (the app does not migrate): explanation only.
+    if (schema.kind === "connection" && dbConfig.source === "config-file") {
+      showSetupWindow(schema.headline, "No se pudo abrir la base de datos con la conexión guardada. Revisa que PostgreSQL esté activo y vuelve a configurar la conexión.");
+    } else {
+      showStartupFailure(schema.headline, schema.detail);
+    }
     return;
   }
   console.log("Base de datos lista.");
 
+  const { registerIpcHandlers } = await import("../backend/ipc");
   registerIpcHandlers();
   console.log("IPC handlers registrados.");
 

@@ -17,12 +17,13 @@ test("the process environment always wins", () => {
 });
 test("packaged: falls back to config.json in the user data folder", () => {
   const r = resolveDatabaseUrl({ ...base, env: {}, readFile: files({ "/ud/config.json": JSON.stringify({ databaseUrl: URL_OK }) }) });
-  assert.deepEqual(r, { ok: true, url: URL_OK, source: "config-file" });
+  assert.deepEqual(r, { ok: true, url: URL_OK, source: "config-file", legacyPlaintext: true }); // flagged so the app can protect it
 });
 test("packaged: never reads .env from the working directory", () => {
   const r = resolveDatabaseUrl({ ...base, env: {}, readFile: files({ "/cwd/.env": `DATABASE_URL=${URL_OK}` }) });
   assert.equal(r.ok, false);
-  assert.match(r.reason, /config\.json/);
+  assert.match(r.reason, /Falta la configuración de la base de datos/);
+  assert.equal(r.fixableBySetup, true, "a packaged app without configuration offers the setup window");
 });
 test("development: reads .env from the working directory", () => {
   const r = resolveDatabaseUrl({ ...base, packaged: false, env: {}, readFile: files({ "/cwd/.env": `DATABASE_URL=${URL_OK}\n` }) });

@@ -246,14 +246,29 @@ try {
   await close(L);
 
   // configuration sources
-  await test("PK-08.config_json_in_user_data_supplies_the_connection_without_environment", "integration", async () => {
+  await test("PK-08.a_legacy_config_json_supplies_the_connection_and_is_protected_by_windows_in_place", "integration", async () => {
     const ud = fs.mkdtempSync(path.join(os.tmpdir(), "pos-packaged-cfg-"));
-    fs.writeFileSync(path.join(ud, "config.json"), JSON.stringify({ databaseUrl: urlFor(runDb, "e2e_packaged") }));
+    const legacyUrl = urlFor(runDb, "e2e_packaged");
+    fs.writeFileSync(path.join(ud, "config.json"), JSON.stringify({ databaseUrl: legacyUrl }));
     const l = await launch(appEnv({}, false), { userDataDir: ud });
     try {
       await l.page.getByText("Ingresa tu PIN para comenzar").waitFor({ timeout: 15000 });
       expect(!l.mainLog.some((x) => containsSecret(x)), "no secret in the main log");
-    } finally { await close(l); fs.rmSync(ud, { recursive: true, force: true }); }
+    } finally { await close(l); }
+    try {
+      const raw = fs.readFileSync(path.join(ud, "config.json"), "utf8");
+      const cfg = JSON.parse(raw);
+      const pw = decodeURIComponent(new URL(legacyUrl).password);
+      expect(cfg.version === 2 && typeof cfg.passwordEncrypted === "string" && !cfg.databaseUrl, "config.json was upgraded to the protected format: " + Object.keys(cfg).join());
+      expect(!raw.includes(pw) && !raw.includes(encodeURIComponent(pw)) && !/postgres(ql)?:\/\//.test(raw), "the password is no longer in clear text in the file");
+      // and the protected file works on the next start of the packaged application (DPAPI round trip on this Windows user)
+      const l2 = await launch(appEnv({}, false), { userDataDir: ud });
+      try {
+        await l2.page.getByText("Ingresa tu PIN para comenzar").waitFor({ timeout: 15000 });
+        await ui.login(l2.page, admin.pin);
+        await l2.page.waitForURL(/#\/dashboard$/, { timeout: 10000 });
+      } finally { await close(l2); }
+    } finally { fs.rmSync(ud, { recursive: true, force: true }); }
   });
   await test("PK-09.without_configuration_the_app_refuses_to_start_and_never_reads_dot_env", "security", async () => {
     const ud = fs.mkdtempSync(path.join(os.tmpdir(), "pos-packaged-nocfg-"));
@@ -261,7 +276,8 @@ try {
     const l = await launch(appEnv({}, false), { userDataDir: ud });
     try {
       await l.page.getByRole("heading", { name: "Falta la configuración de la base de datos" }).waitFor({ timeout: 15000 });
-      expect(await l.page.evaluate(() => typeof window.api) === "undefined", "the failure window has no preload/IPC");
+      expect(await l.page.evaluate(() => typeof window.api) === "undefined", "the window has no application preload/IPC (only the four setup calls)");
+      expect(await l.page.evaluate(() => Object.keys(window.setupApi || {}).sort().join()) === "createAdmin,getState,inspect,save", "the first-run setup window is shown");
       expect(!l.mainLog.some((x) => containsSecret(x)), "no secret in the main log");
     } finally { await close(l); fs.rmSync(ud, { recursive: true, force: true }); }
   });
@@ -339,6 +355,29 @@ try {
       expect((await one("select stock from products where sku=$1", [sku])).stock === 2, "the product was written with the runtime role");
       const who = await db.query("select distinct usename from pg_stat_activity where application_name='e2e_packaged_rt'");
       expect(who.rows.length >= 1 && who.rows.every((r) => r.usename === role), "the app's connections used the runtime role: " + JSON.stringify(who.rows));
+    } finally { await close(l); fs.rmSync(ud, { recursive: true, force: true }); }
+  });
+  await test("PK-15.first_run_setup_window_in_the_package_verifies_the_connection_the_role_and_the_schema_without_saving", "security", async () => {
+    const role = "pos_e2e_pks_" + crypto.randomBytes(3).toString("hex");
+    roles.push(role);
+    const pw = crypto.randomBytes(12).toString("base64url");
+    await createRuntimeRole(urlFor(runDb, "e2e_roles"), { role, password: pw, database: runDb });
+    const ud = fs.mkdtempSync(path.join(os.tmpdir(), "pos-packaged-setup-"));
+    const l = await launch(appEnv({}, false), { userDataDir: ud });
+    try {
+      await l.page.locator("#btn-test").waitFor({ timeout: 15000 });
+      const server = new URL(urlFor(runDb));
+      await l.page.locator("#host").fill(server.hostname);
+      await l.page.locator("#port").fill(server.port || "5432");
+      await l.page.locator("#database").fill(runDb);
+      await l.page.locator("#user").fill(role);
+      await l.page.locator("#password").fill(pw);
+      await l.page.locator("#btn-test").click();
+      await l.page.getByText(/Esquema al día: \d+ de \d+ migraciones/).waitFor({ timeout: 15000 });
+      const t = await l.page.locator("#checks").innerText();
+      expect(/privilegios mínimos/.test(t) && /Ya existe un administrador/.test(t), "the report names the role privileges and the administrator: " + t.replace(/\s+/g, " "));
+      expect(!fs.existsSync(path.join(ud, "config.json")), "nothing is saved until the operator saves (and this test never saves: the package would relaunch itself)");
+      expect(!l.mainLog.some((x) => x.includes(pw) || containsSecret(x)), "no secret in the main log");
     } finally { await close(l); fs.rmSync(ud, { recursive: true, force: true }); }
   });
 } catch (e) {
