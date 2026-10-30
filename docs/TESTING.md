@@ -37,7 +37,10 @@ database is ever written to, overwritten or dropped.
 | `npm run test:packaged` | launches the packaged exe (`npm run package:dir` first) against a throwaway DB: window, login, modules, sale/cash/return/report, CSP, shell hardening, no credentials in the asar, config sources, close/reopen | yes |
 | `npm run test:safety` | legacy sales channels visibility, checkout idempotency (lines compared), connection loss and recovery, safe errors | yes |
 | `npm run test:cash` | register history and closing summaries (cash/card, income/withdrawal, +/- difference, restart, roles, print/export without writes) | yes |
-| `npm run test:migrations` | migrations from empty and legacy DBs (0007/0008), precheck, drift, the app only verifies the schema (empty / behind / newer / unreachable), the explicit `db:migrate` command | yes |
+| `npm run test:refunds` | authorized refunds through IPC: cash/card, administrator PIN (wrong/seller/inactive/legacy), confirmation, tampering, closed register, no funds, partial/complete/excess, idempotency, double click, concurrency, rollback by injected failure, pending returns, legacy, reconciliation of the ledger and the register | yes |
+| `npm run test:refundauth` | brute-force protection of the administrator PIN with a small real limit: lock, recovery, parallel burst, a login does not reset it, survives a change of user | yes |
+| `npm run test:refundui` | the Devoluciones screen end to end (method, confirmation, PIN dialog, session unchanged, pending payment, filters, voucher, unsure outcome warning), dashboard/reports/cash history/closing summary reconcile, persistence after restarting the app | yes |
+| `npm run test:migrations` | migrations from empty and legacy DBs (0007/0008/0009), precheck, drift, the app only verifies the schema (empty / behind / newer / unreachable), the explicit `db:migrate` command | yes |
 | `npm run test:ops` | verified backups, restore into a new database (row-by-row comparison), retention, safe errors, Task Scheduler wrapper, least-privilege role | yes |
 | `npm run test:all` | unit + every Electron suite + migrations + ops | yes |
 | `npm run db:precheck` | read-only pre-flight for the integrity migrations (see below) | DB only |

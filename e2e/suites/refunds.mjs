@@ -40,6 +40,7 @@ export async function run(c) {
     expect(r.ok, "open register: " + J(r));
     return r.v.id;
   };
+  const hackedSessions = new Set(); // sessions whose balance a test set by hand
   const register = () => one("select * from cash_sessions where closed_at is null");
 
   /** a sale as it was persisted (lines with their prices); no stock/cash side effects, only what a refund reads */
@@ -241,6 +242,7 @@ export async function run(c) {
     // exact amount works down to zero
     const sale2 = await mkSale({ lines: [{ p: P[5], q: 1 }, { p: pCheap, q: 2 }] }); // 10.00 + 5.00
     await db.query("update cash_sessions set current_amount='15.00' where closed_at is null");
+    hackedSessions.add(sid);
     const exact = await pay(body(sale2, [[0, 1], [1, 2]], { method: "cash" }), admin.pin);
     expect(exact.ok && (await cashNow()) === 0, "exact balance can be refunded down to 0.00: " + J(exact));
     // the same refund by card still works with no cash
@@ -599,6 +601,29 @@ export async function run(c) {
     const cardRow = by("paid", "card").find((r) => r.externalReference);
     expect(cardRow && cardRow.cashSessionId !== undefined, "the card reference is exposed");
     expect(Object.keys(list.v[0]).every((k) => !/pin|hash/i.test(k)), "no PIN or hash in the listing");
+  });
+
+  // ================================================================== financial reconciliation of the whole run
+  await test("RFD-19.every_register_session_reconciles_to_the_cent_and_refund_totals_match_the_ledger", "integration", async () => {
+    const sessions = await rows("select id, initial_amount, current_amount, final_amount, status from cash_sessions order by id");
+    const bad = [];
+    for (const s of sessions) {
+      if (hackedSessions.has(s.id)) continue; // the balance of these was set by hand in a test: not a ledger fact
+      const m = await one("select coalesce(sum(case when type='IN' then amount else -amount end),0)::numeric n from cash_movements where session_id=$1", [s.id]);
+      if (Math.abs(num(s.current_amount) - (num(s.initial_amount) + num(m.n))) > 0.0001) bad.push([s.id, s.current_amount, num(s.initial_amount) + num(m.n)]);
+    }
+    expect(bad.length === 0, "register balance = initial + movements for every session: " + J(bad));
+    const outMoves = num((await one("select coalesce(sum(m.amount),0)::numeric n from cash_movements m where exists (select 1 from refund_settlements s where s.cash_movement_id=m.id)")).n);
+    const cashLedger = num((await one("select coalesce(sum(amount),0)::numeric n from refund_settlements where payment_method='cash'")).n);
+    expect(outMoves === cashLedger, `cash movements that back refunds (${outMoves}) equal the cash ledger (${cashLedger})`);
+    const manual = num((await one("select coalesce(sum(m.amount),0)::numeric n from cash_movements m where m.type='OUT' and m.sale_id is null and not exists (select 1 from refund_settlements s where s.cash_movement_id=m.id)")).n);
+    const allOut = num((await one("select coalesce(sum(amount),0)::numeric n from cash_movements where type='OUT'")).n);
+    expect(Math.abs(allOut - (manual + cashLedger)) < 0.0001, "every OUT movement is either a manual withdrawal or a cash refund, never both and never neither");
+    const returned = num((await one("select coalesce(sum(total_refund),0)::numeric n from returns where refund_status='paid'")).n);
+    const settled = num((await one("select coalesce(sum(amount),0)::numeric n from refund_settlements")).n);
+    expect(returned === settled, "returns marked paid add up to the settlements (each refund counted once): " + returned + " vs " + settled);
+    const stockGap = await one(`select count(*)::int n from (select ri.sale_item_id, sum(ri.quantity) q, max(si.quantity) sold from return_items ri join sale_items si on si.id=ri.sale_item_id group by 1 having sum(ri.quantity) > max(si.quantity)) x`);
+    expect(stockGap.n === 0, "no line was ever returned beyond what was sold");
   });
 
   void connectRunDb; void waitFor;

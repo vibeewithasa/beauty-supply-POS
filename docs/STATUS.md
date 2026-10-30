@@ -14,9 +14,9 @@ describes the early MVP and is intentionally not edited here.
 | Cash register history (`/cash/history`, from Caja): sessions with filters, closing summary (cash vs card sales apart, manual income/withdrawals, expected, counted, signed difference, related returns), CSV and printable 80/58 mm | implemented and tested (`test:cash`). A vendor sees the open session and the ones they opened/closed |
 | Cash register: one shared register, open/close, income/withdrawal without overdraft, status coherent | implemented and tested |
 | Catalog admin: create/update product, inventory movements (signed deltas), audited price changes, logical delete | implemented and tested, with screens: **Productos** (`/inventory`: list/search, create with initial price+stock, edit, price change with history, logical delete) and **Recepción** (`/receive`: IN/OUT/ADJUST with reason and history) |
-| Returns: validated against the sale, no over-return, restock, refund recorded as `pending` | implemented and tested, with screen (`/returns`: sale lookup, returned/remaining quantities, amount preview, confirmation, history). Shown as **PENDIENTE DE REEMBOLSO**; no button settles it |
+| Returns and refunds (Sprint 05, `docs/REFUNDS.md`): validated against the sale, no over-return, restock; the refund is paid in **cash from the register** or on the **card terminal** with an **administrator PIN** (checked in main, operator's session untouched), explicit confirmation that the money was handed back, atomically with the return; old pending returns can be paid the same way; legacy returns stay legacy | implemented and tested (`test:refunds`, `test:refundauth`, `test:refundui`, unit, migration 0009). Screen `/returns`: **PENDIENTE / PAGADO EN EFECTIVO / PAGADO POR TARJETA / LEGACY**, "Registrar pago pendiente", printable voucher |
 | Users: create/update/deactivate, unique PIN, last-admin protection | implemented and tested (existing users page) |
-| Dashboard: sales, cash, pending vs paid refunds | implemented; figures shown as-is |
+| Dashboard: sales, cash, refunds owed vs paid in cash vs paid by card (by payment date) | implemented and tested |
 | Reports (`/reports`, admin): gross sales, by payment method, top products, returns by refund status, local CSV export; dates validated in main (max 366 days). No profit/cost/tax figures (not recorded) | implemented and tested |
 | Thermal-printer hardware validation, CFDI/fiscal invoicing, backups | **not implemented / not tested on hardware** |
 | Packaged Windows app (unpacked build, `npm run package:dir`) | works: window, login, every module, sale/cash/return/report, close and reopen, verified by `npm run test:packaged` (see `docs/PACKAGING.md`). **Installer unsigned; auto-update disabled** |
@@ -27,8 +27,11 @@ describes the early MVP and is intentionally not edited here.
 - `products:update` can no longer change `stock` or `price`: use `inventory:addMovement` / `priceChanges:create`.
 - `inventory:addMovement`: `amount` is the signed stock delta (IN > 0, OUT < 0, ADJUST signed); `DELETE` is reserved.
 - `returns:create`: amounts come from the sale; a client `unitPrice`/`productId` is only a claim. The refund
-  starts as `pending`; **the cash register is not touched and nothing marks a refund as paid** (no settlement
-  operation exists yet). Deleted products are not restocked (no recovery policy).
+  starts as `pending`; **it does not touch the register and does not mark anything as paid**. Paying is a separate, authorized operation:
+  `returns:createWithRefund` (new return + payment) and `returns:settleRefund` (pending return), both with an administrator PIN, an explicit
+  "money handed back" confirmation and an `operationId` (idempotent). Deleted products are not restocked (no recovery policy).
+- Migration 0009 is additive: `refund_settlements` (one row per paid return; cash links its register movement, card never touches cash). It
+  starts empty and marks nothing as paid. Cash summaries exclude refund movements from "manual withdrawals".
 - Read channels added for the screens: `products:listAdmin` (admin, includes inactive/deleted), `returns:getSaleForReturn`
   (authenticated, informational: `returns:create` re-validates under locks), `reports:getSummary` (admin).
 - `sales:list` / `sales:getDetail` / `receipts:preview` / `receipts:print` are authenticated, but an administrator sees every sale and a
@@ -45,7 +48,8 @@ describes the early MVP and is intentionally not edited here.
 
 - Who may read the full sales history and process returns (`sales:getAll`, `sales:getById`, `returns:*` are open
   to any signed-in user today).
-- How a pending refund is settled (cash from the register? card reversal? who approves?) and the paid state.
+- (decided in Sprint 05) How a pending refund is settled: cash from the register or card terminal, approved with an administrator PIN. Still open: how to
+  resolve `legacy_unspecified` returns (the POS refuses to pay them: it cannot know whether they were already paid).
 - Whether each user has their own register (today one shared register).
 - Taxes and discounts (deliberately absent).
 - Policy for returns of deleted products.
@@ -83,7 +87,12 @@ describes the early MVP and is intentionally not edited here.
   Open items: backups have no off-site copy, the admin commands are Node scripts (a store with only the installer needs them delivered),
   `config.json` still keeps the password in clear text (use the runtime role; DPAPI storage is future work).
 - **Owner decision pending on access:** `returns:getAll`, `returns:getSaleForReturn` and `returns:create` are still open to every signed-in
-  user (a vendor can look up, and return against, another seller's sale). Documented and pinned by a test, not changed.
+  user (a vendor can look up, and return against, another seller's sale). Documented and pinned by a test, not changed. Paying a refund is not
+  open: it needs an administrator PIN.
+- **Refund PIN (Sprint 05):** the administrator authorization has its own attempt budget (a successful login does not reset it). The pre-existing login
+  counter can still be reset by any successful login, so a signed-in user could alternate guesses at an administrator PIN through the login screen;
+  only longer PINs and the lock slow that down. The system records what the operator confirms about the physical delivery of money; it cannot verify it.
+  Cash refunds are taken from the register open at payment time, not necessarily the session of the sale. No physical printer was tested for the voucher.
 - **Backups:** verified manual and schedulable (Task Scheduler wrapper) backups exist; nothing copies them off the machine. PostgreSQL must be installed and managed on each machine.
 - Lighter-weight leftovers: a legacy unused `drizzle/migrations/0001_initial.sql`,
   the renderer lint is still gentle (warnings only for unused names).

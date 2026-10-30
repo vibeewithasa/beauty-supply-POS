@@ -257,7 +257,7 @@ export async function run(c) {
   });
 
   await test("RUI-07.the_voucher_states_exactly_what_happened_to_the_money", "e2e", async () => {
-    const paid = await one("select r.id from returns r join refund_settlements s on s.return_id=r.id where s.payment_method='cash' order by r.id limit 1");
+    const paid = await one("select r.id from returns r join refund_settlements s on s.return_id=r.id where s.payment_method='cash' and s.authorized_by=$1 order by r.id desc limit 1", [admin.id]);
     await page.getByRole("button", { name: `Comprobante de la devolución ${paid.id}` }).click();
     const frame = page.frameLocator('iframe[title="Vista previa del comprobante de devolución"]');
     await frame.getByText(`Comprobante de devolución #${paid.id}`).waitFor({ timeout: 8000 });
