@@ -10,6 +10,7 @@ import ReportsPage from "./app/reports/page";
 import UsersPage from "./app/users/page";
 import StockPage from "./app/stock/page";
 import ReceivePage from "./app/receive/page";
+import HistoryPage from "./app/history/page";
 
 interface User {
   id: number;
@@ -158,6 +159,14 @@ function App() {
         element={
           <ProtectedRoute>
             <CashPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/history"
+        element={
+          <ProtectedRoute>
+            <HistoryPage />
           </ProtectedRoute>
         }
       />
