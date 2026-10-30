@@ -161,8 +161,8 @@ export default function ReturnsPage() {
 
   return (
     <POSLayout>
-      <div className="p-6 max-w-5xl mx-auto">
-        <h1 className="text-3xl font-bold mb-2">Devoluciones</h1>
+      <div className="p-4 md:p-6 max-w-5xl mx-auto">
+        <h1 className="text-2xl md:text-3xl font-bold mb-2">Devoluciones</h1>
         <p className="text-sm text-muted-foreground mb-6">
           Una devolución registrada devuelve el stock y queda como <strong>PENDIENTE DE REEMBOLSO</strong>. Este sistema aún no entrega
           ni descuenta dinero de la caja.

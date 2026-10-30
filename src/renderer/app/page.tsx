@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -28,6 +28,7 @@ export default function LoginPage() {
   };
 
   const handleLogin = async () => {
+    if (loading) return;
     if (pin.length < MIN_PIN) {
       setError("Ingresa tu PIN (mínimo 4 dígitos)");
       return;
@@ -63,6 +64,30 @@ export default function LoginPage() {
     setPin("");
     setError("");
   };
+
+  // The physical keyboard works too: digits, Backspace, Escape (clear) and Enter (sign in).
+  const loginRef = useRef(handleLogin);
+  loginRef.current = handleLogin;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (/^\d$/.test(e.key)) {
+        setPin((p) => (p.length < MAX_PIN ? p + e.key : p));
+        setError("");
+      } else if (e.key === "Backspace") {
+        setPin((p) => p.slice(0, -1));
+        setError("");
+      } else if (e.key === "Escape") {
+        setPin("");
+        setError("");
+      } else if (e.key === "Enter") {
+        e.preventDefault(); // also stops a focused keypad button from being "clicked" by Enter
+        void loginRef.current();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center p-4">

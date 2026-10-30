@@ -261,9 +261,9 @@ export default function InventoryPage() {
 
   return (
     <POSLayout>
-      <div className="p-6">
+      <div className="p-4 md:p-6">
         <div className="flex justify-between items-center mb-6">
-          <h1 className="text-3xl font-bold">Gestión de Productos</h1>
+          <h1 className="text-2xl md:text-3xl font-bold">Gestión de Productos</h1>
           <Button onClick={openCreate} className="btn-pos-primary gap-2 h-12">
             <Plus size={20} />
             Nuevo Producto
@@ -337,18 +337,18 @@ export default function InventoryPage() {
                     <td>{STATUS_LABEL[p.status]}</td>
                     <td>
                       <div className="flex gap-1 flex-wrap">
-                        <Button size="sm" variant="outline" onClick={() => openHistory(p)} aria-label={`Historial de ${p.name}`}>
+                        <Button size="sm" variant="outline" className="h-10" onClick={() => openHistory(p)} aria-label={`Historial de ${p.name}`}>
                           <History size={14} /> Historial
                         </Button>
                         {p.status !== "deleted" && (
                           <>
-                            <Button size="sm" variant="outline" onClick={() => openEdit(p)} aria-label={`Editar ${p.name}`}>
+                            <Button size="sm" variant="outline" className="h-10" onClick={() => openEdit(p)} aria-label={`Editar ${p.name}`}>
                               <Edit2 size={14} /> Editar
                             </Button>
-                            <Button size="sm" variant="outline" onClick={() => openPrice(p)} aria-label={`Cambiar precio de ${p.name}`}>
+                            <Button size="sm" variant="outline" className="h-10" onClick={() => openPrice(p)} aria-label={`Cambiar precio de ${p.name}`}>
                               <DollarSign size={14} /> Precio
                             </Button>
-                            <Button size="sm" variant="destructive" onClick={() => { setDeleteTarget(p); setDeleteReason(""); }} aria-label={`Eliminar ${p.name}`}>
+                            <Button size="sm" variant="destructive" className="h-10" onClick={() => { setDeleteTarget(p); setDeleteReason(""); }} aria-label={`Eliminar ${p.name}`}>
                               <Trash2 size={14} /> Eliminar
                             </Button>
                           </>

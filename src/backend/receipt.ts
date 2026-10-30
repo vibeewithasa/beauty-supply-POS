@@ -102,6 +102,8 @@ body { font-family: "Segoe UI", Arial, Helvetica, sans-serif; font-size: ${small
 .title { text-align: center; font-weight: 700; margin: 2mm 0 1mm; text-transform: uppercase; font-size: ${small ? 8 : 9.5}pt; }
 hr { border: 0; border-top: 1px dashed #000; margin: 2mm 0; }
 .meta .row, .row { display: flex; justify-content: space-between; gap: 2mm; }
+.row > * { min-width: 0; overflow-wrap: anywhere; }
+.row > :last-child { text-align: right; }
 .item { margin: 1.2mm 0; }
 .iname { font-weight: 600; overflow-wrap: anywhere; }
 .total { display: flex; justify-content: space-between; font-weight: 700; font-size: ${small ? 12 : 15}pt; margin: 1mm 0; }

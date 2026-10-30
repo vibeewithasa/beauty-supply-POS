@@ -214,8 +214,8 @@ export default function CashPage() {
 
   return (
     <POSLayout>
-      <div className="p-8">
-        <h1 className="text-3xl font-bold mb-8">Gestión de Caja</h1>
+      <div className="p-4 md:p-6">
+        <h1 className="text-2xl md:text-3xl font-bold mb-8">Gestión de Caja</h1>
 
         {!session ? (
           <Card className="card-pos-stat max-w-md mx-auto">

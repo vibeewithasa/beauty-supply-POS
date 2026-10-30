@@ -288,8 +288,16 @@ export async function run(c) {
     const afterPin = await hashOf(created.id);
     expect(afterPin !== created.pin_hash && verifyModern(pin2, afterPin) && !verifyModern(pin, afterPin), "PIN replaced");
     // deactivate (this is a deactivation, never a physical delete)
-    page.once("dialog", (dlg) => { expect(/Desactivar este usuario/.test(dlg.message()) && /historial/.test(dlg.message()), "honest confirmation text: " + dlg.message()); dlg.accept(); });
+    // the in-app confirmation (AlertDialog) replaced the native confirm()
     await row(name + " editado").getByRole("button", { name: "Desactivar" }).click();
+    const confirmation = page.getByRole("alertdialog");
+    await confirmation.getByText("¿Desactivar este usuario?").waitFor();
+    expect(/Ya no podrá iniciar sesión/.test(await confirmation.innerText()) && /historial se conserva/.test(await confirmation.innerText()), "honest confirmation text: " + (await confirmation.innerText()));
+    await confirmation.getByRole("button", { name: "Cancelar" }).click();
+    await confirmation.waitFor({ state: "hidden" });
+    expect((await one("select active from users where id=$1", [created.id])).active === true, "cancel keeps the user active");
+    await row(name + " editado").getByRole("button", { name: "Desactivar" }).click();
+    await page.getByRole("alertdialog").getByRole("button", { name: "Desactivar usuario" }).click();
     await page.getByText("Usuario desactivado").waitFor();
     await row(name + " editado").waitFor({ state: "detached" });
     const gone = await one("select active from users where id=$1", [created.id]);

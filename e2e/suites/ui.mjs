@@ -34,7 +34,7 @@ export async function run(c) {
     await shot("stock");
   });
   await test("C2.stock_search_by_sku_and_name", "e2e", async () => {
-    const inp = page.getByPlaceholder("Buscar por nombre o SKU...");
+    const inp = page.getByPlaceholder("Buscar por nombre, SKU o código de barras...");
     await inp.fill(prodA.sku); expect((await page.locator("tbody tr", { hasText: prodA.sku }).count()) === 1, "sku search");
     await inp.fill(prodB.name); expect((await page.locator("tbody tr", { hasText: prodB.name }).count()) === 1, "name search");
     await inp.fill("zzzzzz-none"); await page.getByText("No se encontraron productos").waitFor();
@@ -133,6 +133,6 @@ export async function run(c) {
     await ui.nav(page, "Caja");
     await ui.closeCash(page);
   });
-  c.skip("P0.packaged_build_e2e", "e2e", "not executed: the packaged build is not exercised (renderer uses absolute asset paths and BrowserRouter under file://); production coverage is NOT claimed");
+  c.skip("P0.packaged_build_e2e", "e2e", "not part of this dev-server suite: the packaged build is covered by its own runner (npm run test:packaged, needs npm run package:dir first)");
   await ui.logout(page).catch(() => {});
 }

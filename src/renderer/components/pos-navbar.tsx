@@ -100,16 +100,16 @@ export function POSNavbar() {
           Salir
         </Button>
       </div>
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 pb-2">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 pb-2">
         {groups.map((group) => (
-          <div key={group.title} role="group" aria-label={group.title} className="flex items-center gap-1">
-            {groups.length > 1 && <span className="text-[10px] uppercase tracking-wide opacity-60 px-1 hidden lg:inline">{group.title}</span>}
+          <div key={group.title} role="group" aria-label={group.title} className="flex items-center gap-1 [&:not(:first-child)]:border-l [&:not(:first-child)]:border-primary-foreground/25 [&:not(:first-child)]:pl-3">
+            {groups.length > 1 && <span className="text-[10px] uppercase tracking-wide opacity-60 px-1 hidden 2xl:inline">{group.title}</span>}
             {group.links.map((link) => {
               const IconComponent = link.icon;
               return (
                 <Link key={link.href} to={link.href} aria-current={isActive(link.href) ? "page" : undefined}>
-                  <Button variant={isActive(link.href) ? "secondary" : "ghost"} size="sm" className="gap-1.5 h-10 px-3 whitespace-nowrap">
-                    <IconComponent size={18} />
+                  <Button variant={isActive(link.href) ? "secondary" : "ghost"} size="sm" className="gap-1.5 h-10 px-2.5 whitespace-nowrap">
+                    <IconComponent size={18} className="hidden xl:block" />
                     {link.label}
                   </Button>
                 </Link>

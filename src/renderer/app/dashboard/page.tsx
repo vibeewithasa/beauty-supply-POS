@@ -116,10 +116,10 @@ export default function DashboardPage() {
 
   return (
     <POSLayout>
-      <div className="p-8">
+      <div className="p-4 md:p-6">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-foreground mb-2">
+          <h1 className="text-2xl md:text-3xl font-bold text-foreground mb-2">
             Dashboard Administrativo
           </h1>
           <p className="text-muted-foreground">

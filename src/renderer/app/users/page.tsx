@@ -11,6 +11,16 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Search, Plus, Trash2, Edit2 } from "lucide-react";
 import { toast } from "sonner";
 import { describeIpcError } from "@/lib/ipc-error";
@@ -26,6 +36,7 @@ interface UserWithPin extends User {
 }
 
 export default function UsersPage() {
+  const [deactivating, setDeactivating] = useState<{ id: number; name: string } | null>(null);
   const navigate = useNavigate();
   const [user, setUser] = useState<User | null>(null);
   const [users, setUsers] = useState<UserWithPin[]>([]);
@@ -72,7 +83,7 @@ export default function UsersPage() {
         <div className="flex h-screen items-center justify-center">
           <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
         </div>
-      </POSLayout>
+    </POSLayout>
     );
   }
 
@@ -125,9 +136,14 @@ export default function UsersPage() {
       toast.error("No puedes desactivar tu propia cuenta");
       return;
     }
-    if (!confirm("¿Desactivar este usuario? Ya no podrá iniciar sesión; su historial se conserva.")) {
-      return;
-    }
+    const target = users.find((u) => u.id === id);
+    setDeactivating({ id, name: target?.name ?? "" });
+  };
+
+  const confirmDeactivate = async () => {
+    if (!deactivating) return;
+    const { id } = deactivating;
+    setDeactivating(null);
     try {
       await window.api.users.delete(id);
       toast.success("Usuario desactivado");
@@ -156,9 +172,9 @@ export default function UsersPage() {
 
   return (
     <POSLayout>
-      <div className="p-6">
+      <div className="p-4 md:p-6">
         <div className="flex justify-between items-center mb-6">
-          <h1 className="text-3xl font-bold">Gestión de Usuarios</h1>
+          <h1 className="text-2xl md:text-3xl font-bold">Gestión de Usuarios</h1>
           <Button
             onClick={() => setShowCreateDialog(true)}
             className="btn-pos-primary gap-2 h-12"
@@ -173,7 +189,7 @@ export default function UsersPage() {
           <div className="flex gap-2">
             <Search className="text-muted-foreground mt-3" size={20} />
             <Input
-              placeholder="Buscar por nombre..."
+              aria-label="Buscar usuarios" placeholder="Buscar por nombre..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="text-base h-12 flex-1"
@@ -213,7 +229,7 @@ export default function UsersPage() {
                           onClick={() => handleEditUser(u)}
                           variant="outline"
                           size="sm"
-                          className="gap-2"
+                          className="gap-2 h-10"
                         >
                           <Edit2 size={16} />
                           Editar
@@ -222,7 +238,7 @@ export default function UsersPage() {
                           onClick={() => handleDeactivateUser(u.id)}
                           variant="destructive"
                           size="sm"
-                          className="gap-2"
+                          className="gap-2 h-10"
                           disabled={u.id === user.id}
                         >
                           <Trash2 size={16} />
@@ -332,6 +348,20 @@ export default function UsersPage() {
           </div>
         </DialogContent>
       </Dialog>
+      <AlertDialog open={deactivating !== null} onOpenChange={(o) => !o && setDeactivating(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Desactivar este usuario?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deactivating?.name ? `${deactivating.name}: ` : ""}Ya no podrá iniciar sesión; su historial se conserva.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDeactivate}>Desactivar usuario</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </POSLayout>
   );
 }

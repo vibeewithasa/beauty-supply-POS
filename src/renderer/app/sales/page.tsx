@@ -74,6 +74,7 @@ export default function SalesPage() {
   const [showPaymentDialog, setShowPaymentDialog] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "card">("cash");
   const [paying, setPaying] = useState(false);
+  const [received, setReceived] = useState(""); // cash handed over by the customer: a change aid only, never stored
   const [completed, setCompleted] = useState<CompletedSale | null>(null);
   const [receiptSaleId, setReceiptSaleId] = useState<number | null>(null);
   const [printState, setPrintState] = useState<{ kind: "idle" | "printing" | "printed" | "cancelled" | "failed"; message: string }>({ kind: "idle", message: "" });
@@ -145,6 +146,8 @@ export default function SalesPage() {
   );
 
   const total = cart.reduce((sum, item) => sum + item.subtotal, 0);
+  const totalCents = Math.round(total * 100);
+  const receivedCents = /^\d{1,9}(\.\d{1,2})?$/.test(received.trim()) ? Math.round(Number(received.trim()) * 100) : null;
   const unitsInCart = cart.reduce((sum, item) => sum + item.quantity, 0);
 
   const addToCart = (product: Product) => {
@@ -250,6 +253,7 @@ export default function SalesPage() {
       return;
     }
     if (cart.length === 0) return;
+    setReceived("");
     setShowPaymentDialog(true);
   };
 
@@ -483,7 +487,8 @@ export default function SalesPage() {
                       </button>
                     </div>
 
-                    <div className="flex items-center justify-between bg-muted rounded p-1">
+                    <div className="flex items-center gap-3">
+                    <div className="flex items-center justify-between bg-muted rounded p-1 w-44 flex-shrink-0">
                       <button onClick={() => decrease(item)} aria-label={`Disminuir ${item.name}`} className="text-primary hover:bg-primary/10 p-2.5 rounded">
                         <Minus size={18} />
                       </button>
@@ -505,7 +510,8 @@ export default function SalesPage() {
                       </button>
                     </div>
 
-                    <p className="text-right text-sm font-bold text-primary mt-2">{money(item.subtotal)}</p>
+                    <p className="flex-1 text-right text-base font-bold text-primary">{money(item.subtotal)}</p>
+                    </div>
                   </div>
                 ))
               )}
@@ -590,6 +596,27 @@ export default function SalesPage() {
                 </TabsTrigger>
               </TabsList>
             </Tabs>
+
+            {paymentMethod === "cash" && (
+              <div className="space-y-2">
+                <label htmlFor="cash-received" className="text-sm font-semibold block">
+                  Efectivo recibido <span className="font-normal text-muted-foreground">(opcional, para calcular el cambio)</span>
+                </label>
+                <Input id="cash-received" inputMode="decimal" autoComplete="off" placeholder="0.00" value={received} onChange={(e) => setReceived(e.target.value)} disabled={paying} className="h-12 text-lg" />
+                {receivedCents !== null && (
+                  <p data-testid="change-due" className={`text-lg rounded p-2 text-center ${receivedCents >= totalCents ? "bg-green-50 text-green-800" : "bg-amber-50 text-amber-900"}`}>
+                    {receivedCents >= totalCents ? (
+                      <>
+                        Cambio a entregar: <strong>{money((receivedCents - totalCents) / 100)}</strong>
+                      </>
+                    ) : (
+                      <>Faltan {money((totalCents - receivedCents) / 100)}</>
+                    )}
+                  </p>
+                )}
+                <p className="text-xs text-muted-foreground">Es solo una ayuda: no se guarda en la venta ni cambia la caja.</p>
+              </div>
+            )}
 
             <Button onClick={handleCompletePayment} disabled={paying} className="btn-pos-success w-full h-12 text-lg">
               {paying ? "Procesando..." : "Completar Venta"}

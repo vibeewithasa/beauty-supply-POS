@@ -140,6 +140,29 @@ try {
     await ui.nav(page, "Caja");
     await ui.closeCash(page);
   });
+  await test("PK-11.history_receipt_preview_and_settings_work_under_the_packaged_csp", "e2e", async () => {
+    await page.evaluate(() => { window.__cspViolations = []; document.addEventListener("securitypolicyviolation", (e) => window.__cspViolations.push(e.violatedDirective + " " + e.blockedURI)); });
+    const sale = await one("select id from sales order by id desc limit 1");
+    await ui.nav(page, "Historial");
+    await page.locator("#hs-q").fill(String(sale.id));
+    await page.getByRole("button", { name: "Buscar", exact: true }).click();
+    await page.getByRole("button", { name: `Ver venta ${sale.id}` }).click();
+    await page.getByRole("dialog").getByText(`Venta #${sale.id}`).first().waitFor();
+    await page.getByRole("dialog").getByRole("button", { name: "Ver recibo" }).click();
+    const frame = page.frameLocator('iframe[title="Vista previa del recibo"]');
+    await frame.getByText("ESTÉTICA LEAL").waitFor({ timeout: 10000 });
+    await frame.getByText("No es una factura fiscal").waitFor();
+    await frame.getByText(`#${sale.id}`).first().waitFor();
+    const viol = await page.evaluate(() => window.__cspViolations);
+    expect(viol.length === 0, "no CSP violation while previewing the ticket: " + JSON.stringify(viol));
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(400);
+    await page.keyboard.press("Escape");
+    await page.getByRole("dialog").waitFor({ state: "hidden" });
+    await ui.nav(page, "Configuración");
+    await page.waitForFunction(() => document.querySelector("#bs-name")?.value === "Estética Leal", null, { timeout: 10000 });
+    expect((await page.evaluate(() => window.__cspViolations)).length === 0, "no CSP violation on the settings screen");
+  });
   // right after the flows: pooled connections are closed when idle for 10 s
   await test("PK-06.app_connects_only_to_the_throwaway_database", "integration", async () => {
     const apps = (await db.query("select distinct datname from pg_stat_activity where application_name='e2e_packaged'")).rows.map((r) => r.datname);

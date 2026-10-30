@@ -8,14 +8,16 @@ describes the early MVP and is intentionally not edited here.
 | Area | State |
 |---|---|
 | Login by PIN, roles (admin/vendor), sessions owned by the Electron main process, revocation, brute-force limiter | implemented and tested |
-| Sales (cash / card) priced and totalled in the main process, stock-safe under concurrency | implemented and tested |
+| Sales (cash / card) priced and totalled in the main process, stock-safe under concurrency | implemented and tested. Checkout is **idempotent** (`operationId`), guarded against double submit, and every line stores the product name/SKU as sold |
+| Sales history (`/history`): folio/date/method search, server-side pagination, persisted detail with returns, receipt preview and reprint (a vendor sees only their own sales) | implemented and tested |
+| Receipts: Estética Leal commercial (non-fiscal) ticket, 80 mm / 58 mm, preview, print and reprint from the main process; commercial settings screen (`/settings`, admin) | implemented and tested without a physical printer (print output checked as a PDF of the real print document) |
 | Cash register: one shared register, open/close, income/withdrawal without overdraft, status coherent | implemented and tested |
 | Catalog admin: create/update product, inventory movements (signed deltas), audited price changes, logical delete | implemented and tested, with screens: **Productos** (`/inventory`: list/search, create with initial price+stock, edit, price change with history, logical delete) and **Recepción** (`/receive`: IN/OUT/ADJUST with reason and history) |
 | Returns: validated against the sale, no over-return, restock, refund recorded as `pending` | implemented and tested, with screen (`/returns`: sale lookup, returned/remaining quantities, amount preview, confirmation, history). Shown as **PENDIENTE DE REEMBOLSO**; no button settles it |
 | Users: create/update/deactivate, unique PIN, last-admin protection | implemented and tested (existing users page) |
 | Dashboard: sales, cash, pending vs paid refunds | implemented; figures shown as-is |
 | Reports (`/reports`, admin): gross sales, by payment method, top products, returns by refund status, local CSV export; dates validated in main (max 366 days). No profit/cost/tax figures (not recorded) | implemented and tested |
-| Receipt/ticket printing, thermal printers, backups, settings | **not implemented** |
+| Thermal-printer hardware validation, CFDI/fiscal invoicing, backups | **not implemented / not tested on hardware** |
 | Packaged Windows app (unpacked build, `npm run package:dir`) | works: window, login, every module, sale/cash/return/report, close and reopen, verified by `npm run test:packaged` (see `docs/PACKAGING.md`). **Installer unsigned; auto-update disabled** |
 
 ## Contracts worth knowing
@@ -28,6 +30,13 @@ describes the early MVP and is intentionally not edited here.
   operation exists yet). Deleted products are not restocked (no recovery policy).
 - Read channels added for the screens: `products:listAdmin` (admin, includes inactive/deleted), `returns:getSaleForReturn`
   (authenticated, informational: `returns:create` re-validates under locks), `reports:getSummary` (admin).
+- `sales:list` / `sales:getDetail` / `receipts:preview` / `receipts:print` are authenticated, but an administrator sees every sale and a
+  vendor only their own (a sale they may not see is reported as "not found"). `settings:*` and `receipts:listPrinters` are admin-only.
+  The renderer sends only a sale id to the receipt channels: the document is built in main from PostgreSQL.
+- Printing writes nothing to the database. Print automation (`POS_PRINT_MODE_FILE`) and `POS_DEV_PORT` exist only in
+  unpackaged builds.
+- Migration 0007 is additive: `sales.operation_id`, `sale_items.product_name/product_sku` (NULL on old sales, never back-filled),
+  `business_settings` (one row, name "Estética Leal", everything else empty).
 - Unexpected errors reach the UI only as `[ERROR_INTERNO]`; details go to the main-process log, redacted.
 
 ## Decisions still pending (product)

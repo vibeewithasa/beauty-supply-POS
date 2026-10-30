@@ -110,8 +110,8 @@ export default function ReportsPage() {
 
   return (
     <POSLayout>
-      <div className="p-6 max-w-5xl mx-auto">
-        <h1 className="text-3xl font-bold mb-2">Reportes</h1>
+      <div className="p-4 md:p-6 max-w-5xl mx-auto">
+        <h1 className="text-2xl md:text-3xl font-bold mb-2">Reportes</h1>
         <p className="text-sm text-muted-foreground mb-6">
           Ventas brutas registradas por rango de fechas. No incluye costos, utilidad ni impuestos porque el sistema no los registra.
         </p>
