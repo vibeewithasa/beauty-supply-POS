@@ -40,6 +40,13 @@ interface DashboardStats {
   returns: {
     total: string;
     count: number;
+    pending: { total: string; count: number };
+    paid: { total: string; count: number };
+    legacy: { total: string; count: number };
+  };
+  refunds: {
+    paidToday: { cash: { total: string; count: number }; card: { total: string; count: number } };
+    pendingOutstanding: { total: string; count: number };
   };
   stock: {
     total: number;
@@ -88,7 +95,10 @@ export default function DashboardPage() {
 
   const todaySalesTotal = stats ? parseFloat(stats.todaySales.total) : 0;
   const weekSalesTotal = stats ? parseFloat(stats.weekSales.total) : 0;
-  const returnsTotal = stats ? parseFloat(stats.returns.total) : 0;
+  // a registered return is not money handed back: what is still owed is shown apart from what was paid, and cash apart from card
+  const refundsPending = stats ? parseFloat(stats.refunds.pendingOutstanding.total) : 0;
+  const refundsCash = stats ? parseFloat(stats.refunds.paidToday.cash.total) : 0;
+  const refundsCard = stats ? parseFloat(stats.refunds.paidToday.card.total) : 0;
 
   const cashTotal =
     stats?.paymentMethods.find((pm) => pm.method === "cash")?.total || "0";
@@ -111,10 +121,10 @@ export default function DashboardPage() {
 
   return (
     <POSLayout>
-      <div className="p-8">
+      <div className="p-4 md:p-6">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-foreground mb-2">
+          <h1 className="text-2xl md:text-3xl font-bold text-foreground mb-2">
             Dashboard Administrativo
           </h1>
           <p className="text-muted-foreground">
@@ -141,10 +151,22 @@ export default function DashboardPage() {
             variant={stats?.cashSession ? "default" : "warning"}
           />
           <StatCard
-            label="Devoluciones"
-            value={`$${returnsTotal.toFixed(2)}`}
+            label="Reembolsos pendientes de pago"
+            value={`$${refundsPending.toFixed(2)}`}
             icon={<RotateCcw />}
-            variant={returnsTotal > 0 ? "warning" : "default"}
+            variant={refundsPending > 0 ? "warning" : "default"}
+          />
+          <StatCard
+            label="Reembolsos pagados en efectivo (hoy)"
+            value={`$${refundsCash.toFixed(2)}`}
+            icon={<RotateCcw />}
+            variant="default"
+          />
+          <StatCard
+            label="Reembolsos pagados por tarjeta (hoy)"
+            value={`$${refundsCard.toFixed(2)}`}
+            icon={<RotateCcw />}
+            variant="default"
           />
           <StatCard
             label="Stock Total"

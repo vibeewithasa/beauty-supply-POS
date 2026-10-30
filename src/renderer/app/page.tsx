@@ -1,30 +1,44 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
+import { describeIpcError } from "@/lib/ipc-error";
+
+// 4-digit PINs of existing accounts still work; new PINs have 6 to 8 digits (enforced by the backend).
+const MIN_PIN = 4;
+const MAX_PIN = 8;
 
 export default function LoginPage() {
   const [pin, setPin] = useState("");
+  // The PIN is also kept in a ref that is updated synchronously on every key: a fast typist or a keyboard-wedge reader sends
+  // the last digit and Enter within the same millisecond, before React has re-rendered with the state value.
+  const pinRef = useRef("");
+  const updatePin = (next: (current: string) => string) => {
+    pinRef.current = next(pinRef.current);
+    setPin(pinRef.current);
+  };
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
   const handlePinInput = (digit: string) => {
-    if (pin.length < 4) {
-      setPin(pin + digit);
+    if (pinRef.current.length < MAX_PIN) {
+      updatePin((p) => p + digit);
       setError("");
     }
   };
 
   const handleBackspace = () => {
-    setPin(pin.slice(0, -1));
+    updatePin((p) => p.slice(0, -1));
     setError("");
   };
 
   const handleLogin = async () => {
-    if (!pin || pin.length !== 4) {
-      setError("Ingresa un PIN de 4 dígitos");
+    if (loading) return;
+    const pin = pinRef.current;
+    if (pin.length < MIN_PIN) {
+      setError("Ingresa tu PIN (mínimo 4 dígitos)");
       return;
     }
 
@@ -39,21 +53,49 @@ export default function LoginPage() {
         navigate(user.role === "admin" ? "/dashboard" : "/sales");
       } else {
         setError("PIN incorrecto");
-        setPin("");
+        updatePin(() => "");
       }
     } catch (err) {
       console.error("Login error:", err);
-      setError("Error al iniciar sesión");
-      toast.error("Error al iniciar sesión");
+      // the only specific message is the lock after too many failed attempts (generic about users)
+      const { code, message } = describeIpcError(err, "Error al iniciar sesión");
+      const text = code === "LOGIN_BLOQUEADO" ? message : "Error al iniciar sesión";
+      setError(text);
+      updatePin(() => "");
+      toast.error(text);
     } finally {
       setLoading(false);
     }
   };
 
   const handleClear = () => {
-    setPin("");
+    updatePin(() => "");
     setError("");
   };
+
+  // The physical keyboard works too: digits, Backspace, Escape (clear) and Enter (sign in).
+  const loginRef = useRef(handleLogin);
+  loginRef.current = handleLogin;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (/^\d$/.test(e.key)) {
+        if (pinRef.current.length < MAX_PIN) updatePin((p) => p + e.key);
+        setError("");
+      } else if (e.key === "Backspace") {
+        updatePin((p) => p.slice(0, -1));
+        setError("");
+      } else if (e.key === "Escape") {
+        updatePin(() => "");
+        setError("");
+      } else if (e.key === "Enter") {
+        e.preventDefault(); // also stops a focused keypad button from being "clicked" by Enter
+        void loginRef.current();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center p-4">
@@ -72,7 +114,7 @@ export default function LoginPage() {
             <div className="bg-muted rounded-lg p-4 text-center mb-4">
               <div className="text-4xl tracking-widest font-mono font-bold text-primary">
                 {"•".repeat(pin.length)}
-                {pin.length < 4 ? "○".repeat(4 - pin.length) : ""}
+                {pin.length < MIN_PIN ? "○".repeat(MIN_PIN - pin.length) : ""}
               </div>
             </div>
             {error && (
@@ -118,18 +160,11 @@ export default function LoginPage() {
 
           <Button
             onClick={handleLogin}
-            disabled={pin.length !== 4 || loading}
+            disabled={pin.length < MIN_PIN || loading}
             className="w-full btn-pos-primary h-14 text-lg font-bold disabled:opacity-50"
           >
             {loading ? "Ingresando..." : "Iniciar Sesión"}
           </Button>
-
-          <div className="mt-6 p-3 bg-secondary/20 rounded-lg text-xs text-muted-foreground text-center space-y-1">
-            <p className="font-medium">PIN Administrador: 0000</p>
-            <p className="text-xs opacity-70">
-              (Usa script seed:admin para crear más usuarios)
-            </p>
-          </div>
         </div>
       </Card>
     </div>

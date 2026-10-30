@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   pgTable,
   serial,
@@ -8,12 +9,17 @@ import {
   boolean,
   pgEnum,
   numeric,
+  check,
+  uniqueIndex,
+  index,
 } from "drizzle-orm/pg-core";
 
 export const roleEnum = pgEnum("role", ["admin", "vendor"]);
+// 'deleted' = logical deletion (products:softDelete); 'inactive' stays "not for sale, not deleted".
 export const productStatusEnum = pgEnum("product_status", [
   "active",
   "inactive",
+  "deleted",
 ]);
 export const invTypeEnum = pgEnum("inventory_type", [
   "IN",
@@ -23,12 +29,18 @@ export const invTypeEnum = pgEnum("inventory_type", [
 ]);
 export const cashMovementEnum = pgEnum("cash_movement_type", ["IN", "OUT"]);
 export const paymentMethodEnum = pgEnum("payment_method", ["cash", "card"]);
+// Refund settlement: a registered return is NOT a paid refund. 'pending' = owed, not yet paid out;
+// 'paid' is set ONLY together with a refund_settlements row (administrator-authorized, money confirmed handed back);
+// 'legacy_unspecified' marks returns registered before this state existed (never reinterpreted as paid).
+export const refundStatusEnum = pgEnum("refund_status", ["pending", "paid", "legacy_unspecified"]);
 export const cashSessionStatusEnum = pgEnum("cash_session_status", [
   "open",
   "closed",
 ]);
 
-export const users = pgTable("users", {
+export const users = pgTable(
+  "users",
+  {
   id: serial("id").primaryKey(),
   name: varchar("name", { length: 120 }).notNull(),
   pinHash: text("pin_hash").notNull(),
@@ -37,28 +49,43 @@ export const users = pgTable("users", {
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
     .defaultNow()
     .notNull(),
-});
+  },
+  // two users can never share a PIN (login identifies the user by PIN alone)
+  (t) => [uniqueIndex("users_pin_hash_unique").on(t.pinHash)]
+);
 
-export const products = pgTable("products", {
-  id: serial("id").primaryKey(),
-  sku: varchar("sku", { length: 64 }).notNull().unique(),
-  name: varchar("name", { length: 255 }).notNull(),
-  price: numeric("price", { precision: 12, scale: 2 }).notNull(),
-  stock: integer("stock").notNull().default(0),
-  barcode: varchar("barcode", { length: 128 }),
-  category: varchar("category", { length: 128 }),
-  status: productStatusEnum("status").notNull().default("active"),
-  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
-    .defaultNow()
-    .notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" })
-    .defaultNow()
-    .notNull(),
-});
+export const products = pgTable(
+  "products",
+  {
+    id: serial("id").primaryKey(),
+    sku: varchar("sku", { length: 64 }).notNull().unique(),
+    name: varchar("name", { length: 255 }).notNull(),
+    price: numeric("price", { precision: 12, scale: 2 }).notNull(),
+    stock: integer("stock").notNull().default(0),
+    barcode: varchar("barcode", { length: 128 }),
+    category: varchar("category", { length: 128 }),
+    status: productStatusEnum("status").notNull().default("active"),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    check("products_stock_non_negative", sql`${t.stock} >= 0`),
+    check("products_price_non_negative", sql`${t.price} >= 0`),
+    // Invariant of the logical deletion: a deleted product holds no stock, whatever handler touches it.
+    // Compared as text: the new enum value cannot be used as a literal in the migration that adds it.
+    check("products_deleted_has_no_stock", sql`${t.status}::text <> 'deleted' or ${t.stock} = 0`),
+  ]
+);
 
 export const inventoryMovements = pgTable("inventory_movements", {
   id: serial("id").primaryKey(),
-  productId: integer("product_id").notNull(),
+  productId: integer("product_id")
+    .notNull()
+    .references(() => products.id),
   userId: integer("user_id").notNull(),
   type: invTypeEnum("type").notNull(),
   amount: integer("amount").notNull(),
@@ -70,7 +97,9 @@ export const inventoryMovements = pgTable("inventory_movements", {
 
 export const deletedProductsLog = pgTable("deleted_products_log", {
   id: serial("id").primaryKey(),
-  productId: integer("product_id").notNull(),
+  productId: integer("product_id")
+    .notNull()
+    .references(() => products.id),
   sku: varchar("sku", { length: 64 }).notNull(),
   name: varchar("name", { length: 255 }).notNull(),
   deletedBy: integer("deleted_by").notNull(),
@@ -92,74 +121,227 @@ export const priceChanges = pgTable("price_changes", {
     .notNull(),
 });
 
-export const cashSessions = pgTable("cash_sessions", {
-  id: serial("id").primaryKey(),
-  openedBy: integer("opened_by").notNull(),
-  openedAt: timestamp("opened_at", { withTimezone: true, mode: "date" })
-    .defaultNow()
-    .notNull(),
-  initialAmount: numeric("initial_amount", {
-    precision: 12,
-    scale: 2,
-  }).notNull(),
-  currentAmount: numeric("current_amount", {
-    precision: 12,
-    scale: 2,
-  }).notNull(),
-  finalAmount: numeric("final_amount", { precision: 12, scale: 2 }),
-  status: cashSessionStatusEnum("status").notNull().default("open"),
-  closedBy: integer("closed_by"),
-  closedAt: timestamp("closed_at", { withTimezone: true, mode: "date" }),
-});
+export const cashSessions = pgTable(
+  "cash_sessions",
+  {
+    id: serial("id").primaryKey(),
+    openedBy: integer("opened_by").notNull(),
+    openedAt: timestamp("opened_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    initialAmount: numeric("initial_amount", {
+      precision: 12,
+      scale: 2,
+    }).notNull(),
+    currentAmount: numeric("current_amount", {
+      precision: 12,
+      scale: 2,
+    }).notNull(),
+    finalAmount: numeric("final_amount", { precision: 12, scale: 2 }),
+    status: cashSessionStatusEnum("status").notNull().default("open"),
+    closedBy: integer("closed_by"),
+    closedAt: timestamp("closed_at", { withTimezone: true, mode: "date" }),
+  },
+  (t) => [
+    // The installation has ONE shared cash register: at most one session without closed_at.
+    uniqueIndex("cash_sessions_single_open")
+      .on(sql`(1)`)
+      .where(sql`${t.closedAt} is null`),
+    check("cash_sessions_initial_non_negative", sql`${t.initialAmount} >= 0`),
+    check("cash_sessions_current_non_negative", sql`${t.currentAmount} >= 0`),
+    check(
+      "cash_sessions_final_non_negative",
+      sql`${t.finalAmount} is null or ${t.finalAmount} >= 0`
+    ),
+    check(
+      "cash_sessions_state_coherent",
+      sql`(${t.status} = 'open' and ${t.closedAt} is null and ${t.closedBy} is null and ${t.finalAmount} is null) or (${t.status} = 'closed' and ${t.closedAt} is not null and ${t.closedBy} is not null and ${t.finalAmount} is not null)`
+    ),
+  ]
+);
 
-export const cashMovements = pgTable("cash_movements", {
-  id: serial("id").primaryKey(),
-  sessionId: integer("session_id").notNull(),
-  userId: integer("user_id").notNull(),
-  type: cashMovementEnum("type").notNull(),
-  amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
-  reason: text("reason").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
-    .defaultNow()
-    .notNull(),
-});
+export const cashMovements = pgTable(
+  "cash_movements",
+  {
+    id: serial("id").primaryKey(),
+    sessionId: integer("session_id")
+      .notNull()
+      .references(() => cashSessions.id),
+    userId: integer("user_id").notNull(),
+    type: cashMovementEnum("type").notNull(),
+    amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
+    reason: text("reason").notNull(),
+    // The sale that created this movement (NULL for manual income/withdrawals). Lets summaries tell them apart without
+    // reading the reason text; old rows are linked by migration 0008 only when sale, register and amount all agree.
+    saleId: integer("sale_id").references(() => sales.id),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  // 0 is allowed: card sales are recorded as informational movements of amount 0.
+  (t) => [
+    check("cash_movements_amount_non_negative", sql`${t.amount} >= 0`),
+    index("cash_movements_sale_idx").on(t.saleId),
+    index("cash_movements_session_idx").on(t.sessionId),
+  ]
+);
 
-export const sales = pgTable("sales", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull(),
-  cashSessionId: integer("cash_session_id"),
-  total: numeric("total", { precision: 12, scale: 2 }).notNull(),
-  paymentMethod: paymentMethodEnum("payment_method").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
-    .defaultNow()
-    .notNull(),
-});
+export const sales = pgTable(
+  "sales",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").notNull(),
+    cashSessionId: integer("cash_session_id").references(() => cashSessions.id),
+    total: numeric("total", { precision: 12, scale: 2 }).notNull(),
+    paymentMethod: paymentMethodEnum("payment_method").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    // Client-generated key of one checkout attempt: a retry or a double submit returns the same sale.
+    operationId: text("operation_id"),
+  },
+  (t) => [
+    check("sales_total_non_negative", sql`${t.total} >= 0`),
+    uniqueIndex("sales_operation_id_unique").on(t.operationId).where(sql`${t.operationId} is not null`),
+    index("sales_created_at_idx").on(t.createdAt),
+  ]
+);
 
-export const saleItems = pgTable("sale_items", {
-  id: serial("id").primaryKey(),
-  saleId: integer("sale_id").notNull(),
-  productId: integer("product_id").notNull(),
-  quantity: integer("quantity").notNull(),
-  unitPrice: numeric("unit_price", { precision: 12, scale: 2 }).notNull(),
-  subtotal: numeric("subtotal", { precision: 12, scale: 2 }).notNull(),
-});
+export const saleItems = pgTable(
+  "sale_items",
+  {
+    id: serial("id").primaryKey(),
+    saleId: integer("sale_id")
+      .notNull()
+      .references(() => sales.id),
+    productId: integer("product_id")
+      .notNull()
+      .references(() => products.id),
+    quantity: integer("quantity").notNull(),
+    unitPrice: numeric("unit_price", { precision: 12, scale: 2 }).notNull(),
+    subtotal: numeric("subtotal", { precision: 12, scale: 2 }).notNull(),
+    // Identity of the article AS SOLD (null on sales made before these columns existed: never back-filled).
+    productName: text("product_name"),
+    productSku: text("product_sku"),
+  },
+  (t) => [
+    check("sale_items_quantity_positive", sql`${t.quantity} > 0`),
+    check(
+      "sale_items_amounts_non_negative",
+      sql`${t.unitPrice} >= 0 and ${t.subtotal} >= 0`
+    ),
+  ]
+);
 
-export const returns = pgTable("returns", {
-  id: serial("id").primaryKey(),
-  saleId: integer("sale_id").notNull(),
-  totalRefund: numeric("total_refund", { precision: 12, scale: 2 }),
-  reason: text("reason").notNull(),
-  processedBy: integer("processed_by").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
-    .defaultNow()
-    .notNull(),
-});
+export const returns = pgTable(
+  "returns",
+  {
+    id: serial("id").primaryKey(),
+    saleId: integer("sale_id")
+      .notNull()
+      .references(() => sales.id),
+    totalRefund: numeric("total_refund", { precision: 12, scale: 2 }),
+    refundStatus: refundStatusEnum("refund_status").notNull().default("pending"),
+    reason: text("reason").notNull(),
+    processedBy: integer("processed_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    check("returns_total_refund_non_negative", sql`${t.totalRefund} is null or ${t.totalRefund} >= 0`),
+  ]
+);
 
-export const returnItems = pgTable("return_items", {
-  id: serial("id").primaryKey(),
-  returnId: integer("return_id").notNull(),
-  saleItemId: integer("sale_item_id").notNull(),
-  productId: integer("product_id").notNull(),
-  quantity: integer("quantity").notNull(),
-  refundAmount: numeric("refund_amount", { precision: 12, scale: 2 }).notNull(),
-});
+export const returnItems = pgTable(
+  "return_items",
+  {
+    id: serial("id").primaryKey(),
+    returnId: integer("return_id")
+      .notNull()
+      .references(() => returns.id),
+    saleItemId: integer("sale_item_id")
+      .notNull()
+      .references(() => saleItems.id),
+    productId: integer("product_id")
+      .notNull()
+      .references(() => products.id),
+    quantity: integer("quantity").notNull(),
+    refundAmount: numeric("refund_amount", { precision: 12, scale: 2 }).notNull(),
+  },
+  (t) => [
+    check("return_items_quantity_positive", sql`${t.quantity} > 0`),
+    check("return_items_refund_non_negative", sql`${t.refundAmount} >= 0`),
+    // one line per sale item inside a return
+    uniqueIndex("return_items_return_sale_item_unique").on(t.returnId, t.saleItemId),
+  ]
+);
+
+// The settlement entry of a refund: how, when and under whose authority the money of a return was handed back.
+// One row per return at most (a refund cannot be paid twice). 'cash' leaves the register (cash_movements OUT, linked here);
+// 'card' is a refund made externally on the card terminal: it never touches the cash balance and has no movement.
+export const refundSettlements = pgTable(
+  "refund_settlements",
+  {
+    id: serial("id").primaryKey(),
+    returnId: integer("return_id")
+      .notNull()
+      .references(() => returns.id),
+    paymentMethod: paymentMethodEnum("payment_method").notNull(),
+    amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
+    // the administrator whose PIN authorized the payment, and the logged-in user who attended (may be the same person)
+    authorizedBy: integer("authorized_by")
+      .notNull()
+      .references(() => users.id),
+    processedBy: integer("processed_by")
+      .notNull()
+      .references(() => users.id),
+    paidAt: timestamp("paid_at", { withTimezone: true, mode: "date" }).defaultNow().notNull(),
+    // cash: the register the money left; card: the open register at that moment, for the closing report only (nullable)
+    cashSessionId: integer("cash_session_id").references(() => cashSessions.id),
+    cashMovementId: integer("cash_movement_id").references(() => cashMovements.id),
+    externalReference: varchar("external_reference", { length: 64 }),
+    // Client key of one payment attempt: a retry or a double click returns the same settlement.
+    operationId: text("operation_id"),
+  },
+  (t) => [
+    check("refund_settlements_amount_non_negative", sql`${t.amount} >= 0`),
+    uniqueIndex("refund_settlements_return_unique").on(t.returnId),
+    uniqueIndex("refund_settlements_operation_id_unique").on(t.operationId).where(sql`${t.operationId} is not null`),
+    uniqueIndex("refund_settlements_cash_movement_unique").on(t.cashMovementId).where(sql`${t.cashMovementId} is not null`),
+    index("refund_settlements_paid_at_idx").on(t.paidAt),
+    index("refund_settlements_session_idx").on(t.cashSessionId),
+    // cash always leaves a register through a movement; a card refund never creates one; references belong to card only
+    check(
+      "refund_settlements_method_coherent",
+      sql`(${t.paymentMethod} = 'cash' and ${t.cashSessionId} is not null and ${t.cashMovementId} is not null and ${t.externalReference} is null) or (${t.paymentMethod} = 'card' and ${t.cashMovementId} is null)`
+    ),
+  ]
+);
+
+// Single-row commercial configuration used by receipts (id is always 1). Optional fields are NULL when not provided.
+export const businessSettings = pgTable(
+  "business_settings",
+  {
+    id: integer("id").primaryKey().default(1),
+    name: varchar("name", { length: 120 }).notNull().default("Estética Leal"),
+    address: varchar("address", { length: 300 }),
+    phone: varchar("phone", { length: 40 }),
+    whatsapp: varchar("whatsapp", { length: 40 }),
+    taxInfo: varchar("tax_info", { length: 300 }),
+    footerMessage: varchar("footer_message", { length: 300 }),
+    returnPolicy: varchar("return_policy", { length: 600 }),
+    contactInfo: varchar("contact_info", { length: 300 }),
+    logoData: text("logo_data"),
+    paperWidth: varchar("paper_width", { length: 2 }).notNull().default("80"),
+    printerName: varchar("printer_name", { length: 200 }),
+    silentPrint: boolean("silent_print").notNull().default(false),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).defaultNow().notNull(),
+    updatedBy: integer("updated_by"),
+  },
+  (t) => [
+    check("business_settings_singleton", sql`${t.id} = 1`),
+    check("business_settings_paper_width", sql`${t.paperWidth} in ('80', '58')`),
+    check("business_settings_logo_size", sql`${t.logoData} is null or length(${t.logoData}) <= 400000`),
+  ]
+);

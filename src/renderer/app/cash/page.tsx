@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { POSLayout } from "@/components/pos-layout";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -11,9 +11,10 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Minus, X } from "lucide-react";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { History, Plus } from "lucide-react";
 import { toast } from "sonner";
+import { describeIpcError } from "@/lib/ipc-error";
 
 interface User {
   id: number;
@@ -47,6 +48,8 @@ export default function CashPage() {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<CashSession | null>(null);
   const [movements, setMovements] = useState<CashMovement[]>([]);
+  // structured totals of the open session (sales by method come from the sales rows, not from the movement text)
+  const [summary, setSummary] = useState<any>(null);
   const [showOpenDialog, setShowOpenDialog] = useState(false);
   const [showMovementDialog, setShowMovementDialog] = useState(false);
   const [showCloseDialog, setShowCloseDialog] = useState(false);
@@ -74,10 +77,12 @@ export default function CashPage() {
       const sessionData = await window.api.cash.getActiveSession();
       if (sessionData) {
         setSession(sessionData);
-        const movementsData = await window.api.cash.getMovements(
-          sessionData.id
-        );
+        const [movementsData, summaryData] = await Promise.all([
+          window.api.cash.getMovements(sessionData.id),
+          window.api.cash.getSessionSummary(sessionData.id),
+        ]);
         setMovements(movementsData);
+        setSummary(summaryData);
       }
     } catch (error) {
       console.error("Error loading cash data:", error);
@@ -101,19 +106,11 @@ export default function CashPage() {
   const currentAmount = session ? parseFloat(session.currentAmount) : 0;
   const initialAmount = session ? parseFloat(session.initialAmount) : 0;
 
-  // Calcular ventas en efectivo y tarjeta
-  const salesCash = movements
-    .filter((m) => m.reason.includes("Venta") && m.reason.includes("Efectivo"))
-    .reduce((sum, m) => sum + parseFloat(m.amount), 0);
-
-  // Extraer monto de ventas con tarjeta del texto del reason
-  const salesCard = movements
-    .filter((m) => m.reason.includes("Tarjeta"))
-    .reduce((sum, m) => {
-      // Extraer el monto del texto "Venta #X - Tarjeta ($XX.XX)"
-      const match = m.reason.match(/\$([0-9.]+)\)/);
-      return sum + (match ? parseFloat(match[1]) : 0);
-    }, 0);
+  // Ventas por método: tomadas de las ventas de la sesión (no del texto de los movimientos)
+  const salesCash = summary ? parseFloat(summary.sales.cash.total) : 0;
+  const salesCard = summary ? parseFloat(summary.sales.card.total) : 0;
+  // Reembolsos pagados desde esta caja (efectivo salió de la caja; tarjeta se hizo en la terminal y no resta efectivo)
+  const refundsCash = summary ? parseFloat(summary.refunds.cash.total) : 0;
 
   const handleOpenCash = async () => {
     if (!user) return;
@@ -124,7 +121,7 @@ export default function CashPage() {
     }
 
     try {
-      const newSession = await window.api.cash.openSession(amount, user.id);
+      const newSession = await window.api.cash.openSession(amount);
       setSession(newSession);
       setMovements([]);
       setOpeningAmount("");
@@ -132,7 +129,9 @@ export default function CashPage() {
       toast.success("Caja abierta exitosamente");
     } catch (error) {
       console.error("Error opening cash:", error);
-      toast.error("Error al abrir caja");
+      const { code, message } = describeIpcError(error, "Error al abrir caja");
+      toast.error(message);
+      if (code === "CAJA_YA_ABIERTA") await loadData();
     }
   };
 
@@ -150,17 +149,18 @@ export default function CashPage() {
         type: movementType,
         amount,
         reason: movementReason,
-        userId: user.id,
       });
 
       // Reload session and movements to get updated data with user names
-      const [updatedSession, updatedMovements] = await Promise.all([
+      const [updatedSession, updatedMovements, updatedSummary] = await Promise.all([
         window.api.cash.getActiveSession(),
         window.api.cash.getMovements(session.id),
+        window.api.cash.getSessionSummary(session.id),
       ]);
 
       if (updatedSession) setSession(updatedSession);
       setMovements(updatedMovements);
+      setSummary(updatedSummary);
 
       setMovementAmount("");
       setMovementReason("");
@@ -172,7 +172,13 @@ export default function CashPage() {
       );
     } catch (error) {
       console.error("Error adding movement:", error);
-      toast.error("Error al registrar movimiento");
+      const { code, message } = describeIpcError(error, "Error al registrar movimiento");
+      toast.error(message);
+      if (code === "CAJA_CERRADA") {
+        setSession(null);
+        setMovements([]);
+        setShowMovementDialog(false);
+      }
     }
   };
 
@@ -185,7 +191,7 @@ export default function CashPage() {
     }
 
     try {
-      await window.api.cash.closeSession(session.id, actualAmount_num, user.id);
+      await window.api.cash.closeSession(session.id, actualAmount_num);
       const difference = actualAmount_num - currentAmount;
       setSession(null);
       setMovements([]);
@@ -194,14 +200,28 @@ export default function CashPage() {
       toast.success(`Caja cerrada. Diferencia: $${difference.toFixed(2)}`);
     } catch (error) {
       console.error("Error closing cash:", error);
-      toast.error("Error al cerrar caja");
+      const { code, message } = describeIpcError(error, "Error al cerrar caja");
+      toast.error(message);
+      if (code === "CAJA_CERRADA") {
+        setSession(null);
+        setMovements([]);
+        setShowCloseDialog(false);
+      }
     }
   };
 
   return (
     <POSLayout>
-      <div className="p-8">
-        <h1 className="text-3xl font-bold mb-8">Gestión de Caja</h1>
+      <div className="p-4 md:p-6">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+          <h1 className="text-2xl md:text-3xl font-bold">Gestión de Caja</h1>
+          <Link to="/cash/history">
+            <Button variant="outline" className="gap-2 h-11">
+              <History size={18} />
+              Historial de sesiones
+            </Button>
+          </Link>
+        </div>
 
         {!session ? (
           <Card className="card-pos-stat max-w-md mx-auto">
@@ -220,7 +240,7 @@ export default function CashPage() {
         ) : (
           <div className="space-y-6">
             {/* Status */}
-            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-7 gap-4">
               <Card className="card-pos-stat">
                 <div>
                   <p className="card-pos-stat-label">Monto Inicial</p>
@@ -250,6 +270,14 @@ export default function CashPage() {
                   <p className="card-pos-stat-label">Ventas Tarjeta</p>
                   <p className="card-pos-stat-value mt-2 text-blue-600">
                     ${salesCard.toFixed(2)}
+                  </p>
+                </div>
+              </Card>
+              <Card className="card-pos-stat">
+                <div>
+                  <p className="card-pos-stat-label">Reembolsos Efectivo</p>
+                  <p className="card-pos-stat-value mt-2 text-red-600" data-testid="cash-refunds">
+                    -${refundsCash.toFixed(2)}
                   </p>
                 </div>
               </Card>

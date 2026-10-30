@@ -1,43 +1,116 @@
-import { ipcMain } from "electron";
-import { db, pool } from "./db";
+import { db } from "./db";
 import {
   products as productsTable,
   users as usersTable,
   sales as salesTable,
-  saleItems as saleItemsTable,
   cashSessions as cashSessionsTable,
   cashMovements as cashMovementsTable,
-  inventoryMovements as inventoryMovementsTable,
   returns as returnsTable,
-  returnItems as returnItemsTable,
+  refundSettlements as settlementsTable,
   deletedProductsLog as deletedProductsLogTable,
-  priceChanges as priceChangesTable,
 } from "./schema";
-import { eq, or, and, desc, sql, gte, lte, isNull } from "drizzle-orm";
-import crypto from "crypto";
+import { eq, or, and, desc, sql, gte, lt, lte, isNull } from "drizzle-orm";
+import { authorizeAdmin, registerAuthHandlers, secureHandle } from "./auth";
+import { createUser, deactivateUser, listActiveUsers, updateUser } from "./users-service";
+import { createReturn } from "./returns-service";
+import { createReturnWithRefund, settlePendingReturn } from "./refund-service";
+import {
+  getSaleForReturn,
+  listAllProducts,
+  listMovements,
+  listPriceChanges,
+  listReturns,
+  salesByRange,
+  salesSummary,
+} from "./read-service";
+import {
+  addInventoryMovement,
+  createPriceChange,
+  createProduct,
+  updateProduct,
+} from "./catalog-service";
+import {
+  addCashMovement,
+  closeCashSession,
+  createSale,
+  openCashSession,
+  softDeleteProduct,
+} from "./pos-service";
+import { getSaleDetail, legacyListSales, legacySaleById, listSales } from "./sales-history";
+import { getBusinessSettings, updateBusinessSettings } from "./settings-service";
+import { listPrinters, previewCashSummary, previewReceipt, previewReturnVoucher, printCashSummary, printReceipt, printReturnVoucher } from "./receipt-service";
+import { getCashSessionSummary, listCashSessions } from "./cash-summary";
+import type { Access, IpcContext } from "./auth";
 
-function hashPin(pin: string) {
-  return crypto.createHash("sha256").update(pin).digest("hex");
+// Access policy for every protected channel. A channel without an entry cannot
+// be registered (deny by default). Public channels (auth:*) live in auth.ts.
+const ACCESS: Record<string, Access> = {
+  "products:getAll": "authenticated",
+  "products:listAdmin": "admin",
+  "products:findBySkuOrBarcode": "authenticated",
+  "products:create": "admin",
+  "products:update": "admin",
+  "products:softDelete": "admin",
+  "cash:getActiveSession": "authenticated",
+  "cash:openSession": "authenticated",
+  "cash:closeSession": "authenticated",
+  "cash:addMovement": "authenticated",
+  "cash:getMovements": "authenticated",
+  "sales:create": "authenticated",
+  // PRODUCT DECISION PENDING: should vendors read the full sales history and process returns?
+  // (returns:create, returns:getAll and returns:getSaleForReturn are still open to any authenticated user: owner decision pending.)
+  // sales:getAll / sales:getById are authenticated but limited to the caller's own sales for vendors (enforced in main).
+  "sales:getAll": "authenticated",
+  "sales:getById": "authenticated",
+  // history and receipts: authenticated, but a vendor only ever sees the sales they made (enforced in main)
+  "sales:list": "authenticated",
+  "sales:getDetail": "authenticated",
+  "receipts:preview": "authenticated",
+  "receipts:print": "authenticated",
+  "receipts:listPrinters": "admin",
+  // cash-register history and closing summaries: authenticated; a vendor sees the open session and the ones they opened/closed
+  "cash:listSessions": "authenticated",
+  "cash:getSessionSummary": "authenticated",
+  "cash:previewSummary": "authenticated",
+  "cash:printSummary": "authenticated",
+  "settings:getBusiness": "admin",
+  "settings:updateBusiness": "admin",
+  "returns:create": "authenticated",
+  // authorized refunds: any signed-in user prepares them, an active administrator's PIN (checked in main) pays them
+  "returns:createWithRefund": "authenticated",
+  "returns:settleRefund": "authenticated",
+  "returns:getAll": "authenticated",
+  "returns:getSaleForReturn": "authenticated",
+  "returns:previewVoucher": "authenticated",
+  "returns:printVoucher": "authenticated",
+  "users:getAll": "admin",
+  "users:create": "admin",
+  "users:update": "admin",
+  "users:delete": "admin",
+  "inventory:getMovements": "admin",
+  "inventory:addMovement": "admin",
+  "priceChanges:create": "admin",
+  "priceChanges:getAll": "admin",
+  "reports:getSalesByDateRange": "admin",
+  "reports:getDeletedProducts": "admin",
+  "reports:getSummary": "admin",
+  "dashboard:getStats": "admin",
+};
+
+function handle<A extends unknown[], R>(
+  channel: string,
+  fn: (ctx: IpcContext, ...args: A) => Promise<R> | R
+) {
+  const access = ACCESS[channel];
+  if (!access) throw new Error("Sin política de acceso para " + channel);
+  secureHandle(channel, access, fn);
 }
 
 export function registerIpcHandlers() {
-  // ============= AUTH =============
-  ipcMain.handle("auth:login", async (_e, pin: string) => {
-    const pinHash = hashPin(pin);
-    const rows = await db
-      .select({
-        id: usersTable.id,
-        name: usersTable.name,
-        role: usersTable.role,
-      })
-      .from(usersTable)
-      .where(eq(usersTable.pinHash, pinHash));
-    if (rows.length === 1) return rows[0];
-    return null;
-  });
+  registerAuthHandlers();
 
   // ============= PRODUCTS =============
-  ipcMain.handle("products:getAll", async () => {
+  handle("products:getAll", async () => {
     return await db
       .select()
       .from(productsTable)
@@ -45,7 +118,10 @@ export function registerIpcHandlers() {
       .orderBy(productsTable.name);
   });
 
-  ipcMain.handle("products:findBySkuOrBarcode", async (_e, q: string) => {
+  // administrators only: inactive and logically deleted products too (sellers keep seeing active ones only)
+  handle("products:listAdmin", async () => listAllProducts());
+
+  handle("products:findBySkuOrBarcode", async (ctx, q: string) => {
     const rows = await db
       .select()
       .from(productsTable)
@@ -59,79 +135,20 @@ export function registerIpcHandlers() {
     return rows[0] ?? null;
   });
 
-  ipcMain.handle("products:create", async (_e, data: any) => {
-    const processedData = {
-      ...data,
-      price:
-        typeof data.price === "string" ? data.price : data.price?.toString(),
-    };
-    const [product] = await db
-      .insert(productsTable)
-      .values(processedData)
-      .returning();
-    return product;
-  });
+  handle("products:create", async (ctx, data: unknown) =>
+    createProduct(ctx.user.id, data)
+  );
 
-  ipcMain.handle("products:update", async (_e, id: number, data: any) => {
-    const processedData = {
-      ...data,
-      ...(data.price && {
-        price:
-          typeof data.price === "string" ? data.price : data.price.toString(),
-      }),
-    };
-    const [product] = await db
-      .update(productsTable)
-      .set({ ...processedData, updatedAt: new Date() })
-      .where(eq(productsTable.id, id))
-      .returning();
-    return product;
-  });
+  handle("products:update", async (_ctx, id: unknown, data: unknown) =>
+    updateProduct(id, data)
+  );
 
-  ipcMain.handle(
-    "products:softDelete",
-    async (_e, id: number, reason: string, userId: number) => {
-      const [product] = await db
-        .select()
-        .from(productsTable)
-        .where(eq(productsTable.id, id));
-
-      if (!product) return null;
-
-      await db.transaction(async (tx) => {
-        // Mark as deleted
-        await tx
-          .update(productsTable)
-          .set({ status: "deleted" as any, updatedAt: new Date() })
-          .where(eq(productsTable.id, id));
-
-        // Log deletion
-        await tx.insert(deletedProductsLogTable).values({
-          productId: id,
-          sku: product.sku,
-          name: product.name,
-          reason,
-          deletedBy: userId,
-        });
-
-        // Record inventory movement
-        if (product.stock > 0) {
-          await tx.insert(inventoryMovementsTable).values({
-            productId: id,
-            type: "DELETE" as any,
-            amount: -product.stock,
-            reason: `Producto eliminado: ${reason}`,
-            userId,
-          });
-        }
-      });
-
-      return true;
-    }
+  handle("products:softDelete", async (ctx, id: unknown, reason: unknown) =>
+    softDeleteProduct(ctx.user.id, id, reason)
   );
 
   // ============= CASH SESSIONS =============
-  ipcMain.handle("cash:getActiveSession", async () => {
+  handle("cash:getActiveSession", async () => {
     const [session] = await db
       .select()
       .from(cashSessionsTable)
@@ -141,66 +158,19 @@ export function registerIpcHandlers() {
     return session ?? null;
   });
 
-  ipcMain.handle(
-    "cash:openSession",
-    async (_e, initialAmount: number, userId: number) => {
-      const [session] = await db
-        .insert(cashSessionsTable)
-        .values({
-          openedBy: userId,
-          initialAmount: initialAmount.toString(),
-          currentAmount: initialAmount.toString(),
-        })
-        .returning();
-      return session;
-    }
+  handle("cash:openSession", async (ctx, initialAmount: unknown) =>
+    openCashSession(ctx.user.id, initialAmount)
   );
 
-  ipcMain.handle(
-    "cash:closeSession",
-    async (_e, sessionId: number, realTotal: number, userId: number) => {
-      const [session] = await db
-        .update(cashSessionsTable)
-        .set({
-          closedAt: new Date(),
-          closedBy: userId,
-          finalAmount: realTotal.toString(),
-        })
-        .where(eq(cashSessionsTable.id, sessionId))
-        .returning();
-      return session;
-    }
+  handle("cash:closeSession", async (ctx, sessionId: unknown, realTotal: unknown) =>
+    closeCashSession(ctx.user.id, sessionId, realTotal)
   );
 
-  ipcMain.handle("cash:addMovement", async (_e, data: any) => {
-    const { sessionId, type, amount, reason, userId } = data;
+  handle("cash:addMovement", async (ctx, data: unknown) =>
+    addCashMovement(ctx.user.id, data)
+  );
 
-    const [movement] = await db
-      .insert(cashMovementsTable)
-      .values({ sessionId, type, amount: amount.toString(), reason, userId })
-      .returning();
-
-    // Update session current amount
-    if (type === "IN") {
-      await db
-        .update(cashSessionsTable)
-        .set({
-          currentAmount: sql`${cashSessionsTable.currentAmount} + ${amount}`,
-        })
-        .where(eq(cashSessionsTable.id, sessionId));
-    } else {
-      await db
-        .update(cashSessionsTable)
-        .set({
-          currentAmount: sql`${cashSessionsTable.currentAmount} - ${amount}`,
-        })
-        .where(eq(cashSessionsTable.id, sessionId));
-    }
-
-    return movement;
-  });
-
-  ipcMain.handle("cash:getMovements", async (_e, sessionId: number) => {
+  handle("cash:getMovements", async (ctx, sessionId: number) => {
     return await db
       .select({
         id: cashMovementsTable.id,
@@ -218,352 +188,90 @@ export function registerIpcHandlers() {
       .orderBy(desc(cashMovementsTable.createdAt));
   });
 
+  handle("cash:listSessions", async (ctx, query: unknown) => listCashSessions(ctx.user, query));
+  handle("cash:getSessionSummary", async (ctx, id: unknown) => getCashSessionSummary(ctx.user, id));
+  handle("cash:previewSummary", async (ctx, id: unknown) => previewCashSummary(ctx.user, id));
+  handle("cash:printSummary", async (ctx, id: unknown) => printCashSummary(ctx.user, id));
+
   // ============= SALES =============
-  ipcMain.handle("sales:create", async (_e, data: any) => {
-    const { items, total, paymentMethod, userId, sessionId } = data;
-
-    const result = await db.transaction(async (tx) => {
-      // Create sale
-      const [sale] = await tx
-        .insert(salesTable)
-        .values({
-          userId,
-          cashSessionId: sessionId,
-          total: total.toString(),
-          paymentMethod,
-        })
-        .returning();
-
-      // Create sale items and update stock
-      for (const item of items) {
-        await tx.insert(saleItemsTable).values({
-          saleId: sale.id,
-          productId: item.productId,
-          quantity: item.quantity,
-          unitPrice: item.unitPrice.toString(),
-          subtotal: item.subtotal.toString(),
-        });
-
-        // Decrease stock
-        await tx
-          .update(productsTable)
-          .set({ stock: sql`${productsTable.stock} - ${item.quantity}` })
-          .where(eq(productsTable.id, item.productId));
-
-        // Record inventory movement
-        await tx.insert(inventoryMovementsTable).values({
-          productId: item.productId,
-          type: "OUT" as any,
-          amount: -item.quantity,
-          reason: `Venta #${sale.id}`,
-          userId,
-        });
-      }
-
-      // Update cash session and register movement
-      if (sessionId) {
-        if (paymentMethod === "cash") {
-          // Update current amount for cash payments
-          await tx
-            .update(cashSessionsTable)
-            .set({
-              currentAmount: sql`${cashSessionsTable.currentAmount} + ${total}`,
-            })
-            .where(eq(cashSessionsTable.id, sessionId));
-
-          // Register cash movement
-          await tx.insert(cashMovementsTable).values({
-            sessionId,
-            type: "IN" as any,
-            amount: total.toString(),
-            reason: `Venta #${sale.id} - Efectivo`,
-            userId,
-          });
-        } else {
-          // Register card payment as informational movement (amount 0)
-          await tx.insert(cashMovementsTable).values({
-            sessionId,
-            type: "IN" as any,
-            amount: "0",
-            reason: `Venta #${sale.id} - Tarjeta ($${total})`,
-            userId,
-          });
-        }
-      }
-
-      return sale;
-    });
-
-    return result;
-  });
-
-  ipcMain.handle("sales:getAll", async () => {
-    return await db
-      .select()
-      .from(salesTable)
-      .orderBy(desc(salesTable.createdAt))
-      .limit(100);
-  });
-
-  ipcMain.handle("sales:getById", async (_e, id: number) => {
-    const [sale] = await db
-      .select()
-      .from(salesTable)
-      .where(eq(salesTable.id, id));
-
-    if (!sale) return null;
-
-    const items = await db
-      .select({
-        id: saleItemsTable.id,
-        productId: saleItemsTable.productId,
-        quantity: saleItemsTable.quantity,
-        unitPrice: saleItemsTable.unitPrice,
-        subtotal: saleItemsTable.subtotal,
-        productName: productsTable.name,
-        productSku: productsTable.sku,
-      })
-      .from(saleItemsTable)
-      .leftJoin(productsTable, eq(saleItemsTable.productId, productsTable.id))
-      .where(eq(saleItemsTable.saleId, id));
-
-    return { ...sale, items };
-  });
-
-  // ============= RETURNS =============
-  ipcMain.handle("returns:create", async (_e, data: any) => {
-    const { saleId, items, reason, userId } = data;
-
-    const result = await db.transaction(async (tx) => {
-      const [returnRecord] = await tx
-        .insert(returnsTable)
-        .values({
-          saleId,
-          reason,
-          processedBy: userId,
-        })
-        .returning();
-
-      let totalRefund = 0;
-
-      for (const item of items) {
-        const itemPrice =
-          typeof item.unitPrice === "string"
-            ? parseFloat(item.unitPrice)
-            : item.unitPrice;
-        const refundAmount = item.quantity * itemPrice;
-        totalRefund += refundAmount;
-
-        await tx.insert(returnItemsTable).values({
-          returnId: returnRecord.id,
-          saleItemId: item.saleItemId,
-          productId: item.productId,
-          quantity: item.quantity,
-          refundAmount: refundAmount.toString(),
-        });
-
-        // Increase stock
-        await tx
-          .update(productsTable)
-          .set({ stock: sql`${productsTable.stock} + ${item.quantity}` })
-          .where(eq(productsTable.id, item.productId));
-
-        // Record inventory movement
-        await tx.insert(inventoryMovementsTable).values({
-          productId: item.productId,
-          type: "IN" as any,
-          amount: item.quantity,
-          reason: `Devolución #${returnRecord.id} de Venta #${saleId}`,
-          userId,
-        });
-      }
-
-      // Update return with total refund
-      await tx
-        .update(returnsTable)
-        .set({ totalRefund: totalRefund.toString() })
-        .where(eq(returnsTable.id, returnRecord.id));
-
-      return { ...returnRecord, totalRefund };
-    });
-
-    return result;
-  });
-
-  ipcMain.handle("returns:getAll", async () => {
-    return await db
-      .select()
-      .from(returnsTable)
-      .orderBy(desc(returnsTable.createdAt))
-      .limit(100);
-  });
-
-  // ============= USERS =============
-  ipcMain.handle("users:getAll", async () => {
-    return await db
-      .select({
-        id: usersTable.id,
-        name: usersTable.name,
-        role: usersTable.role,
-        createdAt: usersTable.createdAt,
-      })
-      .from(usersTable)
-      .orderBy(usersTable.name);
-  });
-
-  ipcMain.handle("users:create", async (_e, data: any) => {
-    const { name, role, pin } = data;
-    const pinHash = hashPin(pin);
-    const [user] = await db
-      .insert(usersTable)
-      .values({ name, role, pinHash })
-      .returning({
-        id: usersTable.id,
-        name: usersTable.name,
-        role: usersTable.role,
-      });
-    return user;
-  });
-
-  ipcMain.handle("users:update", async (_e, id: number, data: any) => {
-    const updateData: any = { name: data.name, role: data.role };
-    if (data.pin) {
-      updateData.pinHash = hashPin(data.pin);
-    }
-    const [user] = await db
-      .update(usersTable)
-      .set(updateData)
-      .where(eq(usersTable.id, id))
-      .returning({
-        id: usersTable.id,
-        name: usersTable.name,
-        role: usersTable.role,
-      });
-    return user;
-  });
-
-  ipcMain.handle("users:delete", async (_e, id: number) => {
-    await db.delete(usersTable).where(eq(usersTable.id, id));
-    return true;
-  });
-
-  // ============= INVENTORY =============
-  ipcMain.handle("inventory:getMovements", async (_e, productId?: number) => {
-    const query = db
-      .select({
-        id: inventoryMovementsTable.id,
-        productId: inventoryMovementsTable.productId,
-        type: inventoryMovementsTable.type,
-        amount: inventoryMovementsTable.amount,
-        reason: inventoryMovementsTable.reason,
-        createdAt: inventoryMovementsTable.createdAt,
-        userName: usersTable.name,
-        productName: productsTable.name,
-        productSku: productsTable.sku,
-      })
-      .from(inventoryMovementsTable)
-      .leftJoin(usersTable, eq(inventoryMovementsTable.userId, usersTable.id))
-      .leftJoin(
-        productsTable,
-        eq(inventoryMovementsTable.productId, productsTable.id)
-      )
-      .orderBy(desc(inventoryMovementsTable.createdAt))
-      .limit(100);
-
-    if (productId) {
-      return await query.where(
-        eq(inventoryMovementsTable.productId, productId)
-      );
-    }
-
-    return await query;
-  });
-
-  ipcMain.handle("inventory:addMovement", async (_e, data: any) => {
-    const { productId, type, amount, reason, userId } = data;
-
-    await db.transaction(async (tx) => {
-      await tx.insert(inventoryMovementsTable).values({
-        productId,
-        type,
-        amount,
-        reason,
-        userId,
-      });
-
-      // Update stock
-      await tx
-        .update(productsTable)
-        .set({ stock: sql`${productsTable.stock} + ${amount}` })
-        .where(eq(productsTable.id, productId));
-    });
-
-    return true;
-  });
-
-  // ============= PRICE CHANGES =============
-  ipcMain.handle("priceChanges:create", async (_e, data: any) => {
-    const { productId, oldPrice, newPrice, reason, userId } = data;
-
-    await db.transaction(async (tx) => {
-      await tx.insert(priceChangesTable).values({
-        productId,
-        oldPrice: oldPrice.toString(),
-        newPrice: newPrice.toString(),
-        reason,
-        changedBy: userId,
-      });
-
-      await tx
-        .update(productsTable)
-        .set({ price: newPrice.toString(), updatedAt: new Date() })
-        .where(eq(productsTable.id, productId));
-    });
-
-    return true;
-  });
-
-  ipcMain.handle("priceChanges:getAll", async () => {
-    return await db
-      .select({
-        id: priceChangesTable.id,
-        productId: priceChangesTable.productId,
-        oldPrice: priceChangesTable.oldPrice,
-        newPrice: priceChangesTable.newPrice,
-        reason: priceChangesTable.reason,
-        createdAt: priceChangesTable.createdAt,
-        userName: usersTable.name,
-        productName: productsTable.name,
-        productSku: productsTable.sku,
-      })
-      .from(priceChangesTable)
-      .leftJoin(usersTable, eq(priceChangesTable.changedBy, usersTable.id))
-      .leftJoin(
-        productsTable,
-        eq(priceChangesTable.productId, productsTable.id)
-      )
-      .orderBy(desc(priceChangesTable.createdAt))
-      .limit(100);
-  });
-
-  // ============= REPORTS =============
-  ipcMain.handle(
-    "reports:getSalesByDateRange",
-    async (_e, startDate: string, endDate: string) => {
-      return await db
-        .select()
-        .from(salesTable)
-        .where(
-          and(
-            gte(salesTable.createdAt, new Date(startDate)),
-            lte(salesTable.createdAt, new Date(endDate))
-          )
-        )
-        .orderBy(desc(salesTable.createdAt));
-    }
+  handle("sales:create", async (ctx, data: unknown) =>
+    createSale(ctx.user.id, data)
   );
 
-  ipcMain.handle("reports:getDeletedProducts", async () => {
+  // Original channels, kept for compatibility but under the same rule as the history: a vendor only sees their own sales.
+  handle("sales:getAll", async (ctx) => legacyListSales(ctx.user));
+
+  handle("sales:getById", async (ctx, id: unknown) => legacySaleById(ctx.user, id));
+
+  // ============= SALES HISTORY, RECEIPTS, SETTINGS =============
+  handle("sales:list", async (ctx, query: unknown) => listSales(ctx.user, query));
+  handle("sales:getDetail", async (ctx, id: unknown) => getSaleDetail(ctx.user, id));
+  handle("receipts:preview", async (ctx, saleId: unknown, copy?: unknown) => previewReceipt(ctx.user, saleId, copy));
+  handle("receipts:print", async (ctx, saleId: unknown, copy?: unknown) => printReceipt(ctx.user, saleId, copy));
+  handle("receipts:listPrinters", async (ctx) => listPrinters(ctx.event));
+  handle("settings:getBusiness", async () => getBusinessSettings());
+  handle("settings:updateBusiness", async (ctx, data: unknown) => updateBusinessSettings(ctx.user.id, data));
+
+  // ============= RETURNS =============
+  handle("returns:create", async (ctx, data: unknown) =>
+    createReturn(ctx.user.id, data)
+  );
+
+  // a new return AND the payment of its refund in one transaction; the PIN is verified in main, never stored or returned
+  handle("returns:createWithRefund", async (ctx, data: unknown, adminPin: unknown) =>
+    createReturnWithRefund(ctx.user.id, (pin) => authorizeAdmin(pin, ctx.user.id), adminPin, data)
+  );
+
+  // the payment of a return that was registered earlier as pending (no stock or lines are touched)
+  handle("returns:settleRefund", async (ctx, data: unknown, adminPin: unknown) =>
+    settlePendingReturn(ctx.user.id, (pin) => authorizeAdmin(pin, ctx.user.id), adminPin, data)
+  );
+
+  handle("returns:getAll", async () => listReturns());
+
+  // internal voucher of a return (not a fiscal document): built in main from PostgreSQL, printing writes nothing
+  handle("returns:previewVoucher", async (_ctx, returnId: unknown) => previewReturnVoucher(returnId));
+  handle("returns:printVoucher", async (_ctx, returnId: unknown) => printReturnVoucher(returnId));
+
+  // read-only lookup for the returns screen: sale lines, already returned and still returnable quantities
+  handle("returns:getSaleForReturn", async (_ctx, saleId: unknown) => getSaleForReturn(saleId));
+
+  // ============= USERS =============
+  // active users only: "deleted" users are deactivated (their history is kept) and no longer listed
+  handle("users:getAll", async () => listActiveUsers());
+
+  handle("users:create", async (_ctx, data: unknown) => createUser(data));
+
+  handle("users:update", async (_ctx, id: unknown, data: unknown) =>
+    updateUser(id, data)
+  );
+
+  // logical deactivation, never a physical delete (history references users)
+  handle("users:delete", async (ctx, id: unknown) => deactivateUser(ctx.user.id, id));
+
+  // ============= INVENTORY =============
+  handle("inventory:getMovements", async (_ctx, productId?: unknown) => listMovements(productId));
+
+  handle("inventory:addMovement", async (ctx, data: unknown) =>
+    addInventoryMovement(ctx.user.id, data)
+  );
+
+  // ============= PRICE CHANGES =============
+  handle("priceChanges:create", async (ctx, data: unknown) =>
+    createPriceChange(ctx.user.id, data)
+  );
+
+  handle("priceChanges:getAll", async (_ctx, productId?: unknown) => listPriceChanges(productId));
+
+  // ============= REPORTS =============
+  handle("reports:getSalesByDateRange", async (_ctx, startDate: unknown, endDate: unknown) =>
+    salesByRange(startDate, endDate)
+  );
+
+  // real aggregated figures for the reports screen (dates validated in main)
+  handle("reports:getSummary", async (_ctx, range: unknown) => salesSummary(range));
+
+  handle("reports:getDeletedProducts", async () => {
     return await db
       .select({
         id: deletedProductsLogTable.id,
@@ -583,7 +291,7 @@ export function registerIpcHandlers() {
   });
 
   // ============= DASHBOARD STATS =============
-  ipcMain.handle("dashboard:getStats", async () => {
+  handle("dashboard:getStats", async () => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
@@ -649,9 +357,10 @@ export function registerIpcHandlers() {
       .from(usersTable)
       .where(eq(usersTable.active, true));
 
-    // Devoluciones de hoy
+    // Devoluciones de hoy, por estado de liquidación (pendiente != pagado)
     const returnsResult = await db
       .select({
+        status: returnsTable.refundStatus,
         total: sql<string>`COALESCE(SUM(${returnsTable.totalRefund}::numeric), 0)`,
         count: sql<number>`COUNT(*)::int`,
       })
@@ -661,7 +370,32 @@ export function registerIpcHandlers() {
           gte(returnsTable.createdAt, today),
           lte(returnsTable.createdAt, tomorrow)
         )
-      );
+      )
+      .groupBy(returnsTable.refundStatus);
+    const returnsBy = (status: string) => {
+      const r = returnsResult.find((x) => x.status === status);
+      return { total: r?.total || "0", count: r?.count || 0 };
+    };
+    // Refunds actually PAID today, by method (payment date, not return date) and what is still owed (all time)
+    const paidTodayRows = await db
+      .select({
+        method: settlementsTable.paymentMethod,
+        total: sql<string>`COALESCE(SUM(${settlementsTable.amount}), 0)::text`,
+        count: sql<number>`COUNT(*)::int`,
+      })
+      .from(settlementsTable)
+      .where(and(gte(settlementsTable.paidAt, today), lt(settlementsTable.paidAt, tomorrow)))
+      .groupBy(settlementsTable.paymentMethod);
+    const paidToday = (m: "cash" | "card") => {
+      const r = paidTodayRows.find((x) => x.method === m);
+      return { total: r?.total || "0", count: r?.count || 0 };
+    };
+    const [owed] = await db
+      .select({ total: sql<string>`COALESCE(SUM(${returnsTable.totalRefund}), 0)::text`, count: sql<number>`COUNT(*)::int` })
+      .from(returnsTable)
+      .where(eq(returnsTable.refundStatus, "pending"));
+    const returnsAllTotal = returnsResult.reduce((a, x) => a + Number(x.total), 0);
+    const returnsAllCount = returnsResult.reduce((a, x) => a + x.count, 0);
 
     // Stock total
     const stockResult = await db
@@ -738,8 +472,16 @@ export function registerIpcHandlers() {
         total: usersResult[0]?.total || 0,
       },
       returns: {
-        total: returnsResult[0]?.total || "0",
-        count: returnsResult[0]?.count || 0,
+        // registered returns (all states). A return is NOT money handed back: see pending / paid.
+        total: returnsAllTotal.toFixed(2),
+        count: returnsAllCount,
+        pending: returnsBy("pending"), // owed to customers, not yet paid out
+        paid: returnsBy("paid"), // paid by an administrator-authorized settlement (by RETURN date; see `refunds` for payment dates)
+        legacy: returnsBy("legacy_unspecified"), // registered before the state existed
+      },
+      refunds: {
+        paidToday: { cash: paidToday("cash"), card: paidToday("card") }, // by payment date
+        pendingOutstanding: { total: owed?.total || "0", count: owed?.count || 0 }, // owed to customers, all dates
       },
       stock: {
         total: stockResult[0]?.total || 0,

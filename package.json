@@ -15,22 +15,52 @@
     "build": "tsup src/main/main.ts --format cjs --out-dir dist/main --target node18 --external electron,electron-updater && tsup src/preload/preload.ts --format cjs --out-dir dist/preload --target node18 --external electron && vite build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint .",
-    "package": "electron-builder -w",
+    "package": "npm run build && electron-builder --win",
     "db:generate": "drizzle-kit generate",
     "db:check": "drizzle-kit check",
-    "db:migrate": "node ./scripts/migrate.mjs",
-    "seed:admin": "node ./scripts/seed-admin.mjs"
+    "db:migrate": "node ./scripts/db-migrate.mjs",
+    "seed:admin": "node --experimental-strip-types --disable-warning=ExperimentalWarning ./scripts/seed-admin.mjs",
+    "db:precheck": "node ./scripts/precheck-integrity.mjs",
+    "test:unit": "node --experimental-strip-types --test \"e2e/unit/*.test.mjs\"",
+    "test:security": "node e2e/run.mjs security",
+    "test:e2e": "node e2e/run.mjs ui",
+    "test:integration": "node e2e/run.mjs integration",
+    "test:catalog": "node e2e/run.mjs catalog",
+    "test:returns": "node e2e/run.mjs returns",
+    "test:hardening": "node e2e/run.mjs hardening",
+    "test:pin": "node e2e/run.mjs pin",
+    "test:screens": "node e2e/run.mjs screens",
+    "test:cart": "node e2e/run.mjs cart",
+    "test:history": "node e2e/run.mjs history",
+    "test:receipts": "node e2e/run.mjs receipts",
+    "test:ux": "node e2e/run.mjs ux",
+    "test:safety": "node e2e/run.mjs safety",
+    "test:cash": "node e2e/run.mjs cash",
+    "test:refunds": "node e2e/run.mjs refunds",
+    "test:refundauth": "node e2e/run.mjs refundauth",
+    "test:refundui": "node e2e/run.mjs refundui",
+    "test:migrations": "node e2e/migrations.mjs",
+    "test:all": "npm run test:unit && node e2e/run.mjs all && node e2e/migrations.mjs && node e2e/ops.mjs",
+    "package:dir": "npm run build && electron-builder --win dir",
+    "test:packaged": "node e2e/packaged.mjs",
+    "db:status": "node ./scripts/db-status.mjs",
+    "db:backup": "node ./scripts/db-backup.mjs",
+    "db:restore": "node ./scripts/db-restore.mjs",
+    "db:roles": "node ./scripts/db-roles.mjs",
+    "test:ops": "node e2e/ops.mjs"
   },
   "build": {
     "appId": "com.beauty.pos",
     "productName": "Beauty POS",
     "directories": {
-      "buildResources": "build"
+      "buildResources": "build",
+      "output": "release"
     },
     "files": [
       "dist/**",
       "drizzle/**",
-      "package.json"
+      "package.json",
+      "!**/*.map"
     ],
     "asar": true,
     "win": {
@@ -42,14 +72,8 @@
           ]
         }
       ],
-      "icon": "build/icon.ico"
-    },
-    "publish": [
-      {
-        "provider": "generic",
-        "url": "http://localhost/updates/"
-      }
-    ]
+      "signAndEditExecutable": false
+    }
   },
   "dependencies": {
     "@electron/remote": "^2.1.2",
@@ -95,15 +119,15 @@
     "react-day-picker": "^9.8.0",
     "react-dom": "^18.3.1",
     "react-resizable-panels": "^2.1.7",
-    "react-router-dom": "^6.22.0",
+    "react-router-dom": "^7.18.5",
     "recharts": "^2.15.4",
     "sonner": "^1.7.4",
     "tailwind-merge": "^2.5.5",
     "tailwindcss-animate": "^1.0.7",
-    "vaul": "^0.9.9",
-    "zod": "^3.25.76"
+    "vaul": "^0.9.9"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.1",
     "@types/node": "^20.11.30",
     "@types/pg": "^8.15.6",
     "@types/react": "^18.2.73",
@@ -114,10 +138,12 @@
     "@vitejs/plugin-react": "^4.3.1",
     "autoprefixer": "^10.4.19",
     "concurrently": "^8.2.2",
-    "drizzle-kit": "^0.31.7",
-    "electron": "^39.2.5",
-    "electron-builder": "^24.13.3",
+    "drizzle-kit": "^0.31.11",
+    "electron": "^45.1.0",
+    "electron-builder": "^26.18.0",
     "eslint": "^9.12.0",
+    "globals": "^14.0.0",
+    "playwright-core": "^1.49.1",
     "postcss": "^8.4.38",
     "tailwindcss": "^3.4.4",
     "tsup": "^8.2.4",

@@ -11,8 +11,19 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Search, Plus, Trash2, Edit2 } from "lucide-react";
 import { toast } from "sonner";
+import { describeIpcError } from "@/lib/ipc-error";
 
 interface User {
   id: number;
@@ -25,6 +36,7 @@ interface UserWithPin extends User {
 }
 
 export default function UsersPage() {
+  const [deactivating, setDeactivating] = useState<{ id: number; name: string } | null>(null);
   const navigate = useNavigate();
   const [user, setUser] = useState<User | null>(null);
   const [users, setUsers] = useState<UserWithPin[]>([]);
@@ -71,7 +83,7 @@ export default function UsersPage() {
         <div className="flex h-screen items-center justify-center">
           <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
         </div>
-      </POSLayout>
+    </POSLayout>
     );
   }
 
@@ -79,61 +91,66 @@ export default function UsersPage() {
     u.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  // New PINs have 6 to 8 digits (the backend enforces it); accounts that still have a legacy 4-digit PIN keep
+  // working until their owner changes it.
   const handleCreateUser = async () => {
-    if (!userName.trim() || !userPin.trim()) {
-      toast.error("Completa todos los campos");
+    if (!userName.trim()) {
+      toast.error("El nombre es obligatorio");
       return;
     }
-
-    if (userPin.length !== 4 || !/^\d+$/.test(userPin)) {
-      toast.error("El PIN debe ser de 4 dígitos");
+    const pinGiven = userPin.length > 0;
+    if (!editingUser && !pinGiven) {
+      toast.error("El PIN es obligatorio al crear un usuario");
+      return;
+    }
+    if (pinGiven && !/^\d{6,8}$/.test(userPin)) {
+      toast.error("El PIN debe tener de 6 a 8 dígitos");
       return;
     }
 
     try {
       if (editingUser) {
-        // Edit existing user
+        // the PIN is only sent when the administrator typed a new one
         await window.api.users.update(editingUser.id, {
           name: userName,
           role: userRole,
-          pin: userPin,
+          ...(pinGiven ? { pin: userPin } : {}),
         });
-        toast.success("Usuario actualizado exitosamente");
+        toast.success(pinGiven ? "Usuario actualizado y PIN cambiado" : "Usuario actualizado (PIN sin cambios)");
       } else {
-        // Create new user
-        await window.api.users.create({
-          name: userName,
-          role: userRole,
-          pin: userPin,
-        });
+        await window.api.users.create({ name: userName, role: userRole, pin: userPin });
         toast.success("Usuario creado exitosamente");
       }
-
       await loadUsers();
       resetForm();
     } catch (error) {
       console.error("Error saving user:", error);
-      toast.error("Error al guardar usuario");
+      // PIN_EN_USO, ULTIMO_ADMIN, validation errors...: the backend message is already user-readable
+      toast.error(describeIpcError(error, "Error al guardar usuario").message);
     }
   };
 
-  const handleDeleteUser = async (id: number) => {
+  // users:delete DEACTIVATES the account (history is kept); nothing is physically deleted
+  const handleDeactivateUser = async (id: number) => {
     if (id === user.id) {
-      toast.error("No puedes eliminar tu propia cuenta");
+      toast.error("No puedes desactivar tu propia cuenta");
       return;
     }
+    const target = users.find((u) => u.id === id);
+    setDeactivating({ id, name: target?.name ?? "" });
+  };
 
-    if (!confirm("¿Estás seguro de eliminar este usuario?")) {
-      return;
-    }
-
+  const confirmDeactivate = async () => {
+    if (!deactivating) return;
+    const { id } = deactivating;
+    setDeactivating(null);
     try {
       await window.api.users.delete(id);
-      toast.success("Usuario eliminado exitosamente");
+      toast.success("Usuario desactivado");
       await loadUsers();
     } catch (error) {
-      console.error("Error deleting user:", error);
-      toast.error("Error al eliminar usuario");
+      console.error("Error deactivating user:", error);
+      toast.error(describeIpcError(error, "Error al desactivar usuario").message);
     }
   };
 
@@ -155,9 +172,9 @@ export default function UsersPage() {
 
   return (
     <POSLayout>
-      <div className="p-6">
+      <div className="p-4 md:p-6">
         <div className="flex justify-between items-center mb-6">
-          <h1 className="text-3xl font-bold">Gestión de Usuarios</h1>
+          <h1 className="text-2xl md:text-3xl font-bold">Gestión de Usuarios</h1>
           <Button
             onClick={() => setShowCreateDialog(true)}
             className="btn-pos-primary gap-2 h-12"
@@ -172,7 +189,7 @@ export default function UsersPage() {
           <div className="flex gap-2">
             <Search className="text-muted-foreground mt-3" size={20} />
             <Input
-              placeholder="Buscar por nombre..."
+              aria-label="Buscar usuarios" placeholder="Buscar por nombre..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="text-base h-12 flex-1"
@@ -212,20 +229,20 @@ export default function UsersPage() {
                           onClick={() => handleEditUser(u)}
                           variant="outline"
                           size="sm"
-                          className="gap-2"
+                          className="gap-2 h-10"
                         >
                           <Edit2 size={16} />
                           Editar
                         </Button>
                         <Button
-                          onClick={() => handleDeleteUser(u.id)}
+                          onClick={() => handleDeactivateUser(u.id)}
                           variant="destructive"
                           size="sm"
-                          className="gap-2"
+                          className="gap-2 h-10"
                           disabled={u.id === user.id}
                         >
                           <Trash2 size={16} />
-                          Eliminar
+                          Desactivar
                         </Button>
                       </div>
                     </td>
@@ -278,22 +295,24 @@ export default function UsersPage() {
 
             <div>
               <label className="text-sm font-semibold block mb-2">
-                PIN (4 dígitos)
+                {editingUser ? "Nuevo PIN (opcional, 6 a 8 dígitos)" : "PIN (6 a 8 dígitos)"}
               </label>
               <Input
                 type="password"
-                placeholder="0000"
+                aria-label={editingUser ? "Nuevo PIN" : "PIN"}
+                placeholder={editingUser ? "Dejar vacío para conservar el PIN" : "6 a 8 dígitos"}
                 value={userPin}
+                autoComplete="new-password"
                 onChange={(e) => {
-                  const value = e.target.value.replace(/\D/g, "").slice(0, 4);
+                  const value = e.target.value.replace(/\D/g, "").slice(0, 8);
                   setUserPin(value);
                 }}
-                maxLength={4}
+                maxLength={8}
                 className="h-10"
               />
               {editingUser && !userPin && (
                 <p className="text-xs text-muted-foreground mt-1">
-                  Deja vacío para mantener el PIN actual
+                  El PIN actual no se muestra ni se cambia si dejas este campo vacío
                 </p>
               )}
             </div>
@@ -329,6 +348,20 @@ export default function UsersPage() {
           </div>
         </DialogContent>
       </Dialog>
+      <AlertDialog open={deactivating !== null} onOpenChange={(o) => !o && setDeactivating(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Desactivar este usuario?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deactivating?.name ? `${deactivating.name}: ` : ""}Ya no podrá iniciar sesión; su historial se conserva.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDeactivate}>Desactivar usuario</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </POSLayout>
   );
 }
