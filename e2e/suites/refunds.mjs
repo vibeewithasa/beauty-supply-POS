@@ -466,5 +466,140 @@ export async function run(c) {
     expect((await bad("insert into refund_settlements(return_id,payment_method,amount,authorized_by,processed_by,external_reference) values($1,'card','-1.00',$2,$2,'x')", [anyReturn, admin.id])) === "23514", "negative amounts are refused");
   });
 
+  // ================================================================== block C: pending returns
+  const mkPending = async (picks, o = {}) => {
+    const sale = o.sale ?? (await mkSale({ method: o.saleMethod ?? "cash", lines: o.lines ?? [{ p: P[0], q: 3 }] }));
+    const r = await call(`api.returns.create(${J({ saleId: sale.id, reason: "pendiente e2e", items: picks.map(([i, q]) => ({ saleItemId: sale.items[i].id, quantity: q })) })})`);
+    expect(r.ok && r.v.refundStatus === "pending", "pending return: " + J(r));
+    return { sale, ret: r.v };
+  };
+  const spay = (ret, o = {}) => ({ returnId: ret.id, payment: { method: o.method ?? "cash", confirmed: o.confirmed === undefined ? true : o.confirmed, ...(o.reference ? { reference: o.reference } : {}) }, operationId: o.op ?? newOp() });
+  const stateOf = (retId) => one("select r.refund_status s, (select count(*)::int from refund_settlements where return_id=r.id) n from returns r where r.id=$1", [retId]);
+
+  await test("RFD-20.a_pending_return_is_paid_in_cash_once_without_touching_stock_or_return_lines", "integration", async () => {
+    await loginAs(vendor);
+    sid = await openRegister(200);
+    const { ret } = await mkPending([[0, 2]], { lines: [{ p: P[0], q: 3 }] });
+    const stock0 = await stockOf(P[0]), cash0 = await cashNow();
+    const items0 = (await one("select count(*)::int n from return_items")).n, inv0 = (await one("select count(*)::int n from inventory_movements")).n, ret0 = (await one("select count(*)::int n from returns")).n;
+    const r = await settle(spay(ret, { method: "cash" }), admin.pin);
+    expect(r.ok && r.v.refundStatus === "paid" && r.v.id === ret.id && r.v.replayed === false && num(r.v.totalRefund) === 20, "settled: " + J(r));
+    expect((await stockOf(P[0])) === stock0, "stock was NOT incremented a second time");
+    expect((await one("select count(*)::int n from return_items")).n === items0 && (await one("select count(*)::int n from inventory_movements")).n === inv0 && (await one("select count(*)::int n from returns")).n === ret0, "no return lines, stock movements or returns were created");
+    expect((await cashNow()) === cash0 - 20, "the register lost exactly 20.00");
+    const st = await one("select * from refund_settlements where return_id=$1", [ret.id]);
+    const row = await one("select * from returns where id=$1", [ret.id]);
+    expect(st.payment_method === "cash" && st.authorized_by === admin.id && st.processed_by === vendor.id && st.cash_session_id === sid && st.cash_movement_id !== null, "traceability: " + J(st));
+    expect(row.processed_by === vendor.id && new Date(st.paid_at) > new Date(row.created_at), "the return keeps who registered it; the payment date is later than the return date");
+    expect(/Reembolso en efectivo/.test((await one("select reason from cash_movements where id=$1", [st.cash_movement_id])).reason), "register movement written");
+  });
+
+  await test("RFD-21.a_pending_return_can_be_paid_by_card_with_a_reference_and_no_cash_moves", "integration", async () => {
+    const { ret } = await mkPending([[0, 1]], { saleMethod: "cash" });
+    const cash0 = await cashNow(), cmov0 = (await one("select count(*)::int n from cash_movements")).n;
+    const r = await settle(spay(ret, { method: "card", reference: "TERM-77/B" }), admin2.pin);
+    expect(r.ok && r.v.refundStatus === "paid", J(r));
+    const st = await one("select * from refund_settlements where return_id=$1", [ret.id]);
+    expect(st.payment_method === "card" && st.external_reference === "TERM-77/B" && st.authorized_by === admin2.id && st.cash_movement_id === null, "card settlement " + J(st));
+    expect((await cashNow()) === cash0 && (await one("select count(*)::int n from cash_movements")).n === cmov0, "cash and movements untouched");
+  });
+
+  await test("RFD-22.an_already_paid_return_is_refused_whatever_the_channel_or_the_method", "integration", async () => {
+    const { ret } = await mkPending([[0, 1]]);
+    expect((await settle(spay(ret), admin.pin)).ok, "first payment");
+    const cash0 = await cashNow(), before = await snap();
+    for (const method of ["cash", "card"]) {
+      const again = await settle(spay(ret, { method }), admin.pin);
+      expect(code(again) === "REEMBOLSO_YA_PAGADO" && !LEAKS.test(again.err), `paying it again by ${method}: ` + J(again));
+    }
+    expect((await snap()) === before && (await cashNow()) === cash0, "nothing changed");
+    // a return that was created and paid in one go cannot be paid again either
+    const sale = await mkSale({ lines: [{ p: P[1], q: 1 }] });
+    const created = await pay(body(sale, [[0, 1]], { method: "card" }), admin.pin);
+    expect(created.ok, J(created));
+    expect(code(await settle(spay(created.v, { method: "cash" }), admin.pin)) === "REEMBOLSO_YA_PAGADO", "paid-at-creation returns are final too");
+    expect((await stateOf(ret.id)).n === 1 && (await stateOf(created.v.id)).n === 1, "exactly one settlement each");
+  });
+
+  await test("RFD-23.legacy_returns_are_never_turned_into_paid_automatically_or_by_accident", "integration", async () => {
+    const sale = await mkSale({ lines: [{ p: P[2], q: 2 }] });
+    const legacy = await one("insert into returns(sale_id,total_refund,reason,processed_by,refund_status) values($1,'10.00','anterior al control',$2,'legacy_unspecified') returning id", [sale.id, admin.id]);
+    await db.query("insert into return_items(return_id,sale_item_id,product_id,quantity,refund_amount) values($1,$2,$3,1,'10.00')", [legacy.id, sale.items[0].id, P[2].id]);
+    const before = await snap();
+    const r = await settle(spay(legacy), admin.pin);
+    expect(code(r) === "REEMBOLSO_LEGACY" && !LEAKS.test(r.err), "legacy refund cannot be paid from here: " + J(r));
+    const wrongPin = await settle(spay(legacy), "73910462");
+    expect(code(wrongPin) === "REEMBOLSO_LEGACY", "the state is explained before any PIN is asked for: " + J(wrongPin));
+    expect((await snap()) === before && (await stateOf(legacy.id)).s === "legacy_unspecified" && (await stateOf(legacy.id)).n === 0, "still legacy_unspecified, no settlement, nothing written");
+    expect(code(await settle(spay({ id: 99999999 }), admin.pin)) === "DEVOLUCION_NO_ENCONTRADA", "unknown return");
+    const listed = await call("api.returns.getAll()");
+    const l = listed.v.find((x) => x.id === legacy.id);
+    expect(l && l.refundStatus === "legacy_unspecified" && l.paymentMethod === null && l.paidAt === null, "history keeps it as legacy: " + J(l));
+  });
+
+  await test("RFD-24.paying_a_pending_return_needs_the_PIN_and_the_confirmation_and_needs_cash_for_cash", "integration", async () => {
+    const { ret } = await mkPending([[0, 1]]);
+    const before = await snap();
+    expect(code(await settle(spay(ret), vendor.pin)) === "AUTORIZACION_INVALIDA", "a seller's PIN does not authorize");
+    expect(code(await settle(spay(ret), inactiveAdmin.pin)) === "AUTORIZACION_INVALIDA", "an inactive administrator does not authorize");
+    expect(code(await settle(spay(ret, { confirmed: false }), admin.pin)) === "CONFIRMACION_REQUERIDA", "no confirmation, no payment");
+    expect(code(await settle({ ...spay(ret), amount: 1 }, admin.pin)) === "CAMPO_NO_PERMITIDO", "no client amount");
+    expect((await snap()) === before && (await stateOf(ret.id)).s === "pending", "still pending, nothing written");
+    // closed register: cash refused, card allowed
+    await closeStrayCash(db, admin.id);
+    const closed = await settle(spay(ret, { method: "cash" }), admin.pin);
+    expect(code(closed) === "CAJA_CERRADA" && (await stateOf(ret.id)).s === "pending", "cash needs an open register: " + J(closed));
+    // not enough cash
+    sid = await openRegister(3);
+    const poor = await settle(spay(ret, { method: "cash" }), admin.pin);
+    expect(code(poor) === "FONDOS_INSUFICIENTES" && (await stateOf(ret.id)).s === "pending" && (await cashNow()) === 3, "10.00 owed, 3.00 in the register: " + J(poor));
+    const card = await settle(spay(ret, { method: "card" }), admin.pin);
+    expect(card.ok && (await cashNow()) === 3, "paying the same return by card is still possible: " + J(card));
+    sid = await openRegister(500);
+  });
+
+  await test("RFD-25.the_same_payment_is_idempotent_and_competing_payments_pay_once", "integration", async () => {
+    const { ret } = await mkPending([[0, 2]]);
+    const cash0 = await cashNow();
+    const op = newOp();
+    const res = await call(`Promise.allSettled(Array.from({length: 6}, () => api.returns.settleRefund(${J(spay(ret, { method: "cash", op }))}, ${J(admin.pin)}))).then(rs => rs.map(x => x.status === 'fulfilled' ? { ok: true, v: x.value } : { ok: false, err: x.reason && x.reason.message }))`);
+    expect(res.v.every((x) => x.ok) && new Set(res.v.map((x) => x.v.settlement.id)).size === 1 && res.v.filter((x) => !x.v.replayed).length === 1, "double click: one payment, the rest replays: " + J(res.v.map((x) => x.ok ? x.v.replayed : x.err)));
+    expect((await cashNow()) === cash0 - 20 && (await stateOf(ret.id)).n === 1, "paid once");
+    // different operations racing for the same pending return, mixing methods
+    const { ret: ret2 } = await mkPending([[0, 1]]);
+    const cash1 = await cashNow();
+    const calls = ["cash", "card", "cash", "card", "cash", "card"].map((method) => `api.returns.settleRefund(${J(spay(ret2, { method }))}, ${J(admin.pin)})`);
+    const race = await call(`Promise.allSettled([${calls.join(",")}]).then(rs => rs.map(x => x.status === 'fulfilled' ? { ok: true, v: x.value } : { ok: false, err: x.reason && x.reason.message }))`);
+    expect(race.v.filter((x) => x.ok).length === 1, "exactly one of six competing payments won: " + J(race.v.map((x) => x.ok ? "ok" : code(x))));
+    expect(race.v.filter((x) => !x.ok).every((x) => code(x) === "REEMBOLSO_YA_PAGADO"), "the others were told it is already paid");
+    const st = await one("select payment_method m from refund_settlements where return_id=$1", [ret2.id]);
+    expect((await stateOf(ret2.id)).n === 1 && (await cashNow()) === (st.m === "cash" ? cash1 - 10 : cash1), "one settlement; cash moved only if the winner was cash");
+  });
+
+  await test("RFD-26.a_failure_while_paying_a_pending_return_leaves_it_pending_and_the_retry_pays_once", "integration", async () => {
+    const { ret } = await mkPending([[0, 1]]);
+    const before = await snap(), cash0 = await cashNow(), op = newOp();
+    const failed = await withTrigger("returns", "before update", "rfd_boom3", "if new.refund_status = 'paid' then raise exception 'late boom'; end if; return new;", () => settle(spay(ret, { method: "cash", op }), admin.pin));
+    expect(code(failed) === "ERROR_INTERNO" && !LEAKS.test(failed.err), "unexpected failure is generic: " + J(failed));
+    expect((await snap()) === before && (await cashNow()) === cash0 && (await stateOf(ret.id)).s === "pending", "pending, no movement, no settlement");
+    const retry = await settle(spay(ret, { method: "cash", op }), admin.pin);
+    expect(retry.ok && retry.v.replayed === false && (await cashNow()) === cash0 - 10, "retry with the same key pays exactly once: " + J(retry));
+  });
+
+  await test("RFD-27.the_history_distinguishes_pending_paid_in_cash_paid_by_card_and_legacy_with_who_authorized", "integration", async () => {
+    const stillPending = await mkPending([[0, 1]]);
+    const list = await call("api.returns.getAll()");
+    expect(list.ok, J(list));
+    expect(list.v.some((r) => r.id === stillPending.ret.id), "the newest return is listed");
+    const by = (s, m) => list.v.filter((r) => r.refundStatus === s && (m === undefined || r.paymentMethod === m));
+    expect(by("pending").length >= 1 && by("pending").every((r) => r.paymentMethod === null && r.paidAt === null && r.authorizedByName === null), "pending rows carry no payment data");
+    expect(by("paid", "cash").length >= 1 && by("paid", "card").length >= 1, "both paid variants are present");
+    expect(by("paid").every((r) => r.authorizedByName && r.paidByName && r.paidAt && num(r.paidAmount) === num(r.totalRefund)), "every paid row names who authorized, who attended, when and how much");
+    expect(by("legacy_unspecified").length >= 1, "legacy rows are listed apart");
+    const cardRow = by("paid", "card").find((r) => r.externalReference);
+    expect(cardRow && cardRow.cashSessionId !== undefined, "the card reference is exposed");
+    expect(Object.keys(list.v[0]).every((k) => !/pin|hash/i.test(k)), "no PIN or hash in the listing");
+  });
+
   void connectRunDb; void waitFor;
 }
