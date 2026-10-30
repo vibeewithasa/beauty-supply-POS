@@ -6,6 +6,7 @@ import { db } from "./db";
 import { users as usersTable } from "./schema";
 import { SessionStore } from "./session-store";
 import { isTrustedFrame, isTrustedUrl } from "./sender-guard";
+import { resolveDevOrigin } from "./dev-origin";
 import type { GuardOptions } from "./sender-guard";
 import { AuthError, BusinessError } from "./errors";
 import { describeUnexpected, guarded } from "./ipc-errors";
@@ -31,7 +32,7 @@ const limiter = new LoginLimiter(loadLimiterConfig(app.isPackaged ? {} : process
 
 const guardOptions = (): GuardOptions => ({
   packaged: app.isPackaged,
-  devOrigin: "http://localhost:5173",
+  devOrigin: resolveDevOrigin(process.env, app.isPackaged),
   appIndexPath: path.join(app.getAppPath(), "dist", "renderer", "index.html"),
 });
 export const trustedUrl = (url: string) => isTrustedUrl(url, guardOptions());

@@ -21,7 +21,10 @@ export type SaleInput = {
   paymentMethod: "cash" | "card";
   items: SaleItemInput[];
   totalCents: number;
+  /** Optional key of one checkout attempt (retries and double submits return the same sale). */
+  operationId: string | null;
 };
+const OPERATION_ID_RE = /^[A-Za-z0-9_-]{8,64}$/;
 export type CashMovementInput = {
   sessionId: number;
   type: "IN" | "OUT";
@@ -82,7 +85,14 @@ export function parseSaleInput(data: unknown): SaleInput {
       subtotalCents: toCents(it.subtotal, "subtotal"),
     };
   });
-  return { sessionId, paymentMethod, items, totalCents: toCents(data.total, "total") };
+  let operationId: string | null = null;
+  if (data.operationId !== undefined && data.operationId !== null) {
+    if (typeof data.operationId !== "string" || !OPERATION_ID_RE.test(data.operationId)) {
+      throw new BusinessError("OPERACION_INVALIDA", "Identificador de operación inválido");
+    }
+    operationId = data.operationId;
+  }
+  return { sessionId, paymentMethod, items, totalCents: toCents(data.total, "total"), operationId };
 }
 
 export function parseCashMovement(data: unknown): CashMovementInput {

@@ -44,6 +44,17 @@ contextBridge.exposeInMainWorld("api", {
     create: (data: any) => invoke("sales:create", data),
     getAll: () => invoke("sales:getAll"),
     getById: (id: number) => invoke("sales:getById", id),
+    list: (query?: any) => invoke("sales:list", query),
+    getDetail: (id: number) => invoke("sales:getDetail", id),
+  },
+  receipts: {
+    preview: (saleId: number, copy?: boolean) => invoke("receipts:preview", saleId, copy),
+    print: (saleId: number, copy?: boolean) => invoke("receipts:print", saleId, copy),
+    listPrinters: () => invoke("receipts:listPrinters"),
+  },
+  settings: {
+    getBusiness: () => invoke("settings:getBusiness"),
+    updateBusiness: (data: any) => invoke("settings:updateBusiness", data),
   },
   returns: {
     create: (data: any) => invoke("returns:create", data),

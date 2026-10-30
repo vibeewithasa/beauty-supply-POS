@@ -8,7 +8,7 @@ const code = (re) => (e) => re.test(e.message);
 
 test("a valid sale is parsed into integer cents", () => {
   const s = parseSaleInput(sale());
-  assert.deepEqual(s, { sessionId: 5, paymentMethod: "cash", totalCents: 2100, items: [{ productId: 1, quantity: 2, unitPriceCents: 1050, subtotalCents: 2100 }] });
+  assert.deepEqual(s, { sessionId: 5, paymentMethod: "cash", totalCents: 2100, operationId: null, items: [{ productId: 1, quantity: 2, unitPriceCents: 1050, subtotalCents: 2100 }] });
 });
 
 test("sale: missing/invalid session, payment and items are rejected", () => {

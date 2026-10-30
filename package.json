@@ -30,6 +30,7 @@
     "test:hardening": "node e2e/run.mjs hardening",
     "test:pin": "node e2e/run.mjs pin",
     "test:screens": "node e2e/run.mjs screens",
+    "test:cart": "node e2e/run.mjs cart",
     "test:migrations": "node e2e/migrations.mjs",
     "test:all": "npm run test:unit && node e2e/run.mjs all && node e2e/migrations.mjs",
     "package:dir": "npm run build && electron-builder --win dir",

@@ -10,7 +10,7 @@ root.render(
   <React.StrictMode>
     <HashRouter>
       <App />
-      <Toaster />
+      <Toaster position="top-center" offset={92} duration={4000} />
     </HashRouter>
   </React.StrictMode>
 );

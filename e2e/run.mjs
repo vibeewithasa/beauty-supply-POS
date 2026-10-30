@@ -9,11 +9,11 @@ import {
   makeData, createRecorder, summarize, scrub, sleep,
 } from "./lib/harness.mjs";
 
-const SUITES = { security: "./suites/security.mjs", ui: "./suites/ui.mjs", integration: "./suites/integration.mjs", catalog: "./suites/catalog.mjs", returns: "./suites/returns.mjs", hardening: "./suites/hardening.mjs", pin: "./suites/pin.mjs", screens: "./suites/screens.mjs" };
+const SUITES = { security: "./suites/security.mjs", ui: "./suites/ui.mjs", integration: "./suites/integration.mjs", catalog: "./suites/catalog.mjs", returns: "./suites/returns.mjs", hardening: "./suites/hardening.mjs", pin: "./suites/pin.mjs", screens: "./suites/screens.mjs", cart: "./suites/cart.mjs" };
 const arg = process.argv[2] || "all";
-const selected = arg === "all" ? ["security", "ui", "integration", "catalog", "returns", "hardening", "pin", "screens"] : [arg];
+const selected = arg === "all" ? ["security", "ui", "integration", "catalog", "returns", "hardening", "pin", "screens", "cart"] : [arg];
 if (!selected.every((s) => SUITES[s])) {
-  console.error("Unknown suite. Use: security | ui | integration | catalog | returns | hardening | pin | screens | all");
+  console.error("Unknown suite. Use: security | ui | integration | catalog | returns | hardening | pin | screens | cart | all");
   process.exit(2);
 }
 
@@ -73,6 +73,7 @@ try {
       fatal = fatal || e;
     } finally {
       try { await launched?.app.close(); } catch {}
+      if (launched?.userData) { await sleep(300); try { fs.rmSync(launched.userData, { recursive: true, force: true }); } catch {} }
       currentApp = null;
       await sleep(300);
       await monitor.stop();

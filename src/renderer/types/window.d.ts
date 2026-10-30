@@ -35,6 +35,17 @@ declare global {
         create(data: any): Promise<any>;
         getAll(): Promise<any[]>;
         getById(id: number): Promise<any>;
+        list(query?: any): Promise<any>;
+        getDetail(id: number): Promise<any>;
+      };
+      receipts: {
+        preview(saleId: number, copy?: boolean): Promise<{ html: string; width: "80" | "58"; folio: number }>;
+        print(saleId: number, copy?: boolean): Promise<{ status: "printed" | "cancelled" | "failed"; message: string }>;
+        listPrinters(): Promise<{ name: string; displayName: string }[]>;
+      };
+      settings: {
+        getBusiness(): Promise<any>;
+        updateBusiness(data: any): Promise<any>;
       };
       returns: {
         create(data: any): Promise<any>;

@@ -42,10 +42,11 @@ export async function run(c) {
   await test("D0.sale_is_blocked_without_open_cash", "e2e", async () => {
     await ui.nav(page, "Vender");
     await page.getByPlaceholder("Código, SKU o nombre...").fill(prodA.sku);
-    await page.getByRole("button", { name: new RegExp(prodA.name) }).first().click();
+    await page.getByRole("option", { name: new RegExp(prodA.name) }).first().click();
     await page.getByRole("button", { name: "Pagar" }).click();
     await page.getByText("No hay caja abierta").waitFor({ timeout: 4000 });
-    await page.getByRole("button", { name: "Limpiar" }).click();
+    await page.getByRole("button", { name: "Limpiar", exact: true }).click();
+    await page.getByRole("alertdialog").getByRole("button", { name: "Limpiar carrito" }).click(); // clearing now asks first
   });
   await test("D1.open_cash_500", "e2e", async () => {
     await ui.openCash(page, 500);

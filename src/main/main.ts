@@ -4,6 +4,7 @@ import { dbConfig } from "../backend/db";
 import { createDbAndRunMigrations } from "../backend/migrate";
 import { registerIpcHandlers } from "../backend/ipc";
 import { trustedUrl } from "../backend/auth";
+import { resolveDevOrigin } from "../backend/dev-origin";
 
 const isDev = !app.isPackaged;
 let mainWindow: BrowserWindow | null = null;
@@ -53,7 +54,7 @@ async function createWindow() {
   });
 
   if (isDev) {
-    await win.loadURL("http://localhost:5173");
+    await win.loadURL(resolveDevOrigin(process.env, app.isPackaged));
     win.webContents.openDevTools({ mode: "detach" });
   } else {
     const indexPath = path.join(app.getAppPath(), "dist", "renderer", "index.html");

@@ -41,9 +41,43 @@ async function lockOpenSession(tx: Tx, sessionId: number) {
 }
 
 // ------------------------------------------------------------------ sales
+/**
+ * A repeated checkout attempt (same operationId) returns the sale that already exists instead of creating another.
+ * It must come from the same user with the same session and total; anything else is a client bug, not a replay.
+ */
+async function findReplay(userId: number, input: ReturnType<typeof parseSaleInput>) {
+  if (!input.operationId) return null;
+  const [existing] = await db.select().from(salesTable).where(eq(salesTable.operationId, input.operationId));
+  if (!existing) return null;
+  if (
+    existing.userId !== userId ||
+    existing.cashSessionId !== input.sessionId ||
+    toCents(existing.total, "total") !== input.totalCents ||
+    existing.paymentMethod !== input.paymentMethod
+  ) {
+    throw new BusinessError("OPERACION_DUPLICADA", "El identificador de operación ya se usó para otra venta");
+  }
+  return { ...existing, replayed: true as const };
+}
+
 export async function createSale(userId: number, data: unknown) {
   const input = parseSaleInput(data);
+  const replay = await findReplay(userId, input);
+  if (replay) return replay;
 
+  try {
+    return await createSaleTx(userId, input);
+  } catch (e) {
+    // Two identical attempts racing: the unique index let one through; the other gets the same sale back.
+    if (input.operationId && pgErrorCode(e) === "23505") {
+      const again = await findReplay(userId, input);
+      if (again) return again;
+    }
+    throw e;
+  }
+}
+
+async function createSaleTx(userId: number, input: ReturnType<typeof parseSaleInput>) {
   return await db.transaction(async (tx) => {
     await lockOpenSession(tx, input.sessionId);
 
@@ -91,6 +125,7 @@ export async function createSale(userId: number, data: unknown) {
         cashSessionId: input.sessionId,
         total,
         paymentMethod: input.paymentMethod,
+        operationId: input.operationId,
       })
       .returning();
 
@@ -101,6 +136,8 @@ export async function createSale(userId: number, data: unknown) {
         quantity: item.quantity,
         unitPrice: centsToDb(unitCents),
         subtotal: centsToDb(subtotal),
+        productName: product.name, // identity as sold: later renames or deletion must not change old receipts
+        productSku: product.sku,
       });
       const updated = await tx
         .update(productsTable)
@@ -141,7 +178,7 @@ export async function createSale(userId: number, data: unknown) {
         userId,
       });
     }
-    return sale;
+    return { ...sale, replayed: false as const };
   });
 }
 

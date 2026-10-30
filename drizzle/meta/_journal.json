@@ -50,6 +50,13 @@
       "when": 1793270819565,
       "tag": "0006_users_unique_pin",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793317817600,
+      "tag": "0007_sales_history_receipts",
+      "breakpoints": true
     }
   ]
 }

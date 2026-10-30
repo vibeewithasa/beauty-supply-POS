@@ -11,6 +11,7 @@
 // printed. Test users get random PINs that live in memory only.
 import path from "node:path";
 import fs from "node:fs";
+import os from "node:os";
 import crypto from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -22,7 +23,9 @@ export { createRecorder, expect, summarize, ExpectationError } from "./recorder.
 
 const { Client } = pg;
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-export const APP_URL = "http://localhost:5173";
+// The dev server port. Defaults to 5173; set E2E_PORT to run beside a developer's own `npm run dev` session.
+export const E2E_PORT = Number(process.env.E2E_PORT || 5173);
+export const APP_URL = `http://localhost:${E2E_PORT}`;
 const DB_PREFIX = "beauty_pos_e2e_";
 const DB_PATTERN = /^beauty_pos_e2e_[a-z0-9]+$/;
 
@@ -131,21 +134,21 @@ function listenerPid(port) {
   return Number(String(r.stdout).trim()) || null;
 }
 /**
- * The Electron app hardcodes http://localhost:5173, so the suite needs that port. It starts its OWN Vite and
+ * The dev server port is E2E_PORT (default 5173; the app is told through POS_DEV_PORT). The suite starts its OWN Vite and
  * proves ownership (the listener PID is the spawned child). If anything already listens there it fails
  * explicitly: a foreign server is never reused and never killed.
  */
 export async function ensureVite() {
   for (const host of ["127.0.0.1", "::1"]) {
-    if (await listening(5173, host)) throw new Error(`port 5173 is already in use on ${host}; stop that server first (the suite never reuses or kills foreign processes)`);
+    if (await listening(E2E_PORT, host)) throw new Error(`port ${E2E_PORT} is already in use on ${host}; stop that server first (or set E2E_PORT to a free port) (the suite never reuses or kills foreign processes)`);
   }
-  const child = spawn(process.execPath, [path.join(ROOT, "node_modules/vite/bin/vite.js"), "--port", "5173", "--strictPort"], { cwd: ROOT, stdio: "ignore" });
+  const child = spawn(process.execPath, [path.join(ROOT, "node_modules/vite/bin/vite.js"), "--port", String(E2E_PORT), "--strictPort"], { cwd: ROOT, stdio: "ignore" });
   const stop = () => killTree(child);
   try {
     const up = async () => fetch(APP_URL).then((r) => r.status === 200 ? r.text() : false).catch(() => false);
     const html = await waitFor(up, 30000);
-    if (!html) throw new Error("Vite did not start on 5173");
-    const pid = listenerPid(5173);
+    if (!html) throw new Error("Vite did not start on " + E2E_PORT);
+    const pid = listenerPid(E2E_PORT);
     if (!pid || pid !== child.pid) throw new Error(`ownership check failed: listener pid ${pid} is not the spawned Vite (${child.pid})`);
     if (!html.includes("/src/renderer/main.tsx")) throw new Error("served page is not this project's renderer");
   } catch (e) { stop(); throw e; }
@@ -179,11 +182,14 @@ export function buildMain() {
 // tests cannot lock the login by accident; the hardening suite runs with real, small limits.
 const DEFAULT_APP_ENV = { POS_LOGIN_MAX_ATTEMPTS: "1000" };
 export async function launchApp(runDb, db, artifacts, extraEnv = {}) {
-  const env = { ...process.env, ...DEFAULT_APP_ENV, ...extraEnv, DATABASE_URL: urlFor(runDb, "e2e_app") };
+  const env = { ...process.env, ...DEFAULT_APP_ENV, ...extraEnv, DATABASE_URL: urlFor(runDb, "e2e_app"), POS_DEV_PORT: String(E2E_PORT) };
   delete env.ELECTRON_RUN_AS_NODE;
+  // A private user-data folder per launch: the single-instance lock and the local storage are never shared with a
+  // developer's own running app (which would otherwise make the test instance quit immediately).
+  const userData = fs.mkdtempSync(path.join(os.tmpdir(), "pos-e2e-ud-"));
   const app = await _electron.launch({
     executablePath: path.join(ROOT, "node_modules/electron/dist/electron.exe"),
-    args: ["."], cwd: ROOT, env, timeout: 60000,
+    args: [".", "--user-data-dir=" + userData], cwd: ROOT, env, timeout: 60000,
   });
   const mainLog = [];
   const proc = app.process();
@@ -203,8 +209,8 @@ export async function launchApp(runDb, db, artifacts, extraEnv = {}) {
   await page.reload();
   await page.waitForLoadState("domcontentloaded");
   fs.mkdirSync(artifacts, { recursive: true });
-  return { app, page, mainLog, consoleErrors, watch };
-  } catch (e) { try { await app.close(); } catch {} throw e; }
+  return { app, page, mainLog, consoleErrors, watch, userData };
+  } catch (e) { try { await app.close(); } catch {} fs.rmSync(userData, { recursive: true, force: true }); throw e; }
 }
 
 // ---------------------------------------------------------------- synthetic data
@@ -253,7 +259,7 @@ export const ui = {
   async sell(page, { query, name, qty = 1, method }) {
     await ui.nav(page, "Vender");
     await page.getByPlaceholder("Código, SKU o nombre...").fill(query);
-    await page.getByRole("button", { name: new RegExp(name) }).first().click();
+    await page.getByRole("option", { name: new RegExp(name) }).first().click();
     if (qty > 1) await page.locator('input[type="number"]').first().fill(String(qty));
     await page.getByRole("button", { name: "Pagar" }).click();
     const dlg = page.getByRole("dialog");
@@ -305,3 +311,8 @@ export async function ipc(page, expr) {
 export const unauthenticated = (r) => r.ok === false && /Sesi[oó]n no v[aá]lida/.test(r.err);
 export const forbidden = (r) => r.ok === false && /No autorizado/.test(r.err);
 export const denied = (r) => unauthenticated(r) || forbidden(r);
+
+/** Closes any cash session a previous suite left open (the suites share one run database). */
+export async function closeStrayCash(db, userId) {
+  await db.query("update cash_sessions set status='closed', closed_at=now(), closed_by=$1, final_amount=current_amount where closed_at is null", [userId]);
+}

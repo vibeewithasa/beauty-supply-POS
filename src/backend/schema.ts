@@ -11,6 +11,7 @@ import {
   numeric,
   check,
   uniqueIndex,
+  index,
 } from "drizzle-orm/pg-core";
 
 export const roleEnum = pgEnum("role", ["admin", "vendor"]);
@@ -189,8 +190,14 @@ export const sales = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),
+    // Client-generated key of one checkout attempt: a retry or a double submit returns the same sale.
+    operationId: text("operation_id"),
   },
-  (t) => [check("sales_total_non_negative", sql`${t.total} >= 0`)]
+  (t) => [
+    check("sales_total_non_negative", sql`${t.total} >= 0`),
+    uniqueIndex("sales_operation_id_unique").on(t.operationId).where(sql`${t.operationId} is not null`),
+    index("sales_created_at_idx").on(t.createdAt),
+  ]
 );
 
 export const saleItems = pgTable(
@@ -206,6 +213,9 @@ export const saleItems = pgTable(
     quantity: integer("quantity").notNull(),
     unitPrice: numeric("unit_price", { precision: 12, scale: 2 }).notNull(),
     subtotal: numeric("subtotal", { precision: 12, scale: 2 }).notNull(),
+    // Identity of the article AS SOLD (null on sales made before these columns existed: never back-filled).
+    productName: text("product_name"),
+    productSku: text("product_sku"),
   },
   (t) => [
     check("sale_items_quantity_positive", sql`${t.quantity} > 0`),
@@ -257,5 +267,32 @@ export const returnItems = pgTable(
     check("return_items_refund_non_negative", sql`${t.refundAmount} >= 0`),
     // one line per sale item inside a return
     uniqueIndex("return_items_return_sale_item_unique").on(t.returnId, t.saleItemId),
+  ]
+);
+
+// Single-row commercial configuration used by receipts (id is always 1). Optional fields are NULL when not provided.
+export const businessSettings = pgTable(
+  "business_settings",
+  {
+    id: integer("id").primaryKey().default(1),
+    name: varchar("name", { length: 120 }).notNull().default("Estética Leal"),
+    address: varchar("address", { length: 300 }),
+    phone: varchar("phone", { length: 40 }),
+    whatsapp: varchar("whatsapp", { length: 40 }),
+    taxInfo: varchar("tax_info", { length: 300 }),
+    footerMessage: varchar("footer_message", { length: 300 }),
+    returnPolicy: varchar("return_policy", { length: 600 }),
+    contactInfo: varchar("contact_info", { length: 300 }),
+    logoData: text("logo_data"),
+    paperWidth: varchar("paper_width", { length: 2 }).notNull().default("80"),
+    printerName: varchar("printer_name", { length: 200 }),
+    silentPrint: boolean("silent_print").notNull().default(false),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).defaultNow().notNull(),
+    updatedBy: integer("updated_by"),
+  },
+  (t) => [
+    check("business_settings_singleton", sql`${t.id} = 1`),
+    check("business_settings_paper_width", sql`${t.paperWidth} in ('80', '58')`),
+    check("business_settings_logo_size", sql`${t.logoData} is null or length(${t.logoData}) <= 400000`),
   ]
 );

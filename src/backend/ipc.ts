@@ -35,6 +35,9 @@ import {
   openCashSession,
   softDeleteProduct,
 } from "./pos-service";
+import { getSaleDetail, listSales } from "./sales-history";
+import { getBusinessSettings, updateBusinessSettings } from "./settings-service";
+import { listPrinters, previewReceipt, printReceipt } from "./receipt-service";
 import type { Access, IpcContext } from "./auth";
 
 // Access policy for every protected channel. A channel without an entry cannot
@@ -56,6 +59,14 @@ const ACCESS: Record<string, Access> = {
   // (sales:getAll, sales:getById, returns:create, returns:getAll are open to any authenticated user for now.)
   "sales:getAll": "authenticated",
   "sales:getById": "authenticated",
+  // history and receipts: authenticated, but a vendor only ever sees the sales they made (enforced in main)
+  "sales:list": "authenticated",
+  "sales:getDetail": "authenticated",
+  "receipts:preview": "authenticated",
+  "receipts:print": "authenticated",
+  "receipts:listPrinters": "admin",
+  "settings:getBusiness": "admin",
+  "settings:updateBusiness": "admin",
   "returns:create": "authenticated",
   "returns:getAll": "authenticated",
   "returns:getSaleForReturn": "authenticated",
@@ -201,6 +212,15 @@ export function registerIpcHandlers() {
 
     return { ...sale, items };
   });
+
+  // ============= SALES HISTORY, RECEIPTS, SETTINGS =============
+  handle("sales:list", async (ctx, query: unknown) => listSales(ctx.user, query));
+  handle("sales:getDetail", async (ctx, id: unknown) => getSaleDetail(ctx.user, id));
+  handle("receipts:preview", async (ctx, saleId: unknown, copy?: unknown) => previewReceipt(ctx.user, saleId, copy));
+  handle("receipts:print", async (ctx, saleId: unknown, copy?: unknown) => printReceipt(ctx.user, saleId, copy));
+  handle("receipts:listPrinters", async (ctx) => listPrinters(ctx.event));
+  handle("settings:getBusiness", async () => getBusinessSettings());
+  handle("settings:updateBusiness", async (ctx, data: unknown) => updateBusinessSettings(ctx.user.id, data));
 
   // ============= RETURNS =============
   handle("returns:create", async (ctx, data: unknown) =>

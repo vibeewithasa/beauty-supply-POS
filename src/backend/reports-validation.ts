@@ -9,7 +9,7 @@ const DAY_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 export type ReportRange = { from: string; to: string; start: Date; endExclusive: Date; days: number };
 
-function parseDay(value: unknown, label: string): { text: string; date: Date } {
+export function parseDay(value: unknown, label: string): { text: string; date: Date } {
   const m = typeof value === "string" ? DAY_RE.exec(value) : null;
   if (!m) throw new BusinessError("FECHA_INVALIDA", `${label}: usa el formato AAAA-MM-DD`);
   const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];

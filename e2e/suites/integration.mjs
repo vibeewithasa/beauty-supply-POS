@@ -408,7 +408,7 @@ export async function run(c) {
     await ui.nav(page, "Vender");
     await page.getByPlaceholder("Código, SKU o nombre...").fill(p.sku);
     await page.getByText("Agotado").first().waitFor();
-    await page.getByRole("button", { name: new RegExp(p.name) }).first().click();
+    await page.getByRole("option", { name: new RegExp(p.name) }).first().click();
     await page.getByText(/está agotado/).first().waitFor({ timeout: 4000 });
     expect((await page.getByText("Carrito (1 artículo)").count()) === 0, "zero-stock product was added to the cart");
     expect((await page.getByText("Carrito (0 artículos)").count()) === 1, "cart is still empty");
@@ -420,11 +420,12 @@ export async function run(c) {
     const search = page.getByPlaceholder("Código, SKU o nombre...");
     for (let i = 0; i < 3; i++) {
       await search.fill(p.sku);
-      await page.getByRole("button", { name: new RegExp(p.name) }).first().click();
+      await page.getByRole("option", { name: new RegExp(p.name) }).first().click();
     }
     await page.getByText(/Solo hay 2 unidades/).first().waitFor({ timeout: 4000 });
     expect(Number(await page.locator('input[type="number"]').first().inputValue()) === 2, "quantity capped at the stock");
-    await page.getByRole("button", { name: "Limpiar" }).click();
+    await page.getByRole("button", { name: "Limpiar", exact: true }).click();
+    await page.getByRole("alertdialog").getByRole("button", { name: "Limpiar carrito" }).click(); // clearing now asks first
   });
   await test("UI-STOCK-03.rejected_sale_refreshes_the_catalog_and_cart", "e2e", async () => {
     const sid = await openSession(0);
@@ -432,7 +433,7 @@ export async function run(c) {
     await ui.nav(page, "Ver Stock");
     await ui.nav(page, "Vender");
     await page.getByPlaceholder("Código, SKU o nombre...").fill(p.sku);
-    await page.getByRole("button", { name: new RegExp(p.name) }).first().click();
+    await page.getByRole("option", { name: new RegExp(p.name) }).first().click();
     await page.locator('input[type="number"]').first().fill("3");
     // someone else sells/removes stock while this cart is open
     await db.query("update products set stock=1 where id=$1", [p.id]);
@@ -444,7 +445,8 @@ export async function run(c) {
     await page.waitForFunction(() => document.querySelector('input[type="number"]')?.value === "1", null, { timeout: 6000 });
     expect((await one("select count(*)::int n from sales where cash_session_id=$1", [sid])).n === 0, "no sale persisted");
     expect((await stockOf(p)) === 1, "stock untouched");
-    await page.getByRole("button", { name: "Limpiar" }).click();
+    await page.getByRole("button", { name: "Limpiar", exact: true }).click();
+    await page.getByRole("alertdialog").getByRole("button", { name: "Limpiar carrito" }).click(); // clearing now asks first
   });
 
   await closeAll();

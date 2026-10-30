@@ -53,15 +53,23 @@ const CALLS = {
   "products:listAdmin": "api.products.listAdmin()",
   "returns:getSaleForReturn": "api.returns.getSaleForReturn(999999)",
   "reports:getSummary": "api.reports.getSummary({from:'2026-01-01',to:'2026-01-02'})",
+  "sales:list": "api.sales.list({page:1})",
+  "sales:getDetail": "api.sales.getDetail(999999)",
+  "receipts:preview": "api.receipts.preview(999999)",
+  "receipts:print": "api.receipts.print(999999)",
+  "receipts:listPrinters": "api.receipts.listPrinters()",
+  "settings:getBusiness": "api.settings.getBusiness()",
+  "settings:updateBusiness": "api.settings.updateBusiness({name:'x'})",
 };
 const ADMIN_ONLY = [
   "products:create", "products:update", "products:softDelete", "users:getAll", "users:create", "users:update",
   "users:delete", "inventory:getMovements", "inventory:addMovement", "priceChanges:create", "priceChanges:getAll",
   "reports:getSalesByDateRange", "reports:getDeletedProducts", "dashboard:getStats", "products:listAdmin", "reports:getSummary",
+  "receipts:listPrinters", "settings:getBusiness", "settings:updateBusiness",
 ];
 const VENDOR_READS = [
   "products:getAll", "products:findBySkuOrBarcode", "cash:getActiveSession", "cash:getMovements", "sales:getAll",
-  "sales:getById", "returns:getAll", "returns:getSaleForReturn",
+  "sales:getById", "returns:getAll", "returns:getSaleForReturn", "sales:list", "sales:getDetail", "receipts:preview", "receipts:print",
 ];
 
 export async function run(c) {
@@ -87,7 +95,7 @@ export async function run(c) {
   await test("A2.public_me_without_session_is_null", "security", async () => {
     expect((await me()) === null, "me() must be null before login");
   });
-  await test("A3.all_29_protected_channels_rejected_without_session", "security", async () => {
+  await test("A3.all_36_protected_channels_rejected_without_session", "security", async () => {
     const before = await userCount();
     const leaks = [];
     for (const [ch, expr] of Object.entries(CALLS)) { const r = await ipc(page, expr); if (!unauthenticated(r)) leaks.push(`${ch}:${r.ok ? "ALLOWED" : r.err}`); }
@@ -106,10 +114,10 @@ export async function run(c) {
   await test("B2.vendor_allowed_operations_work", "security", async () => {
     const bad = [];
     // returns:getSaleForReturn(999999) reaches its handler and answers a business error (the sale does not exist)
-    for (const ch of VENDOR_READS) { const r = await ipc(page, CALLS[ch]); if (!r.ok && !/[VENTA_NO_ENCONTRADA]/.test(r.err)) bad.push(ch + ":" + r.err); }
+    for (const ch of VENDOR_READS) { const r = await ipc(page, CALLS[ch]); if (!r.ok && !/\[VENTA_NO_ENCONTRADA\]/.test(r.err)) bad.push(ch + ":" + r.err); }
     expect(bad.length === 0, bad.join(" | "));
   });
-  await test("B3.vendor_rejected_on_all_16_admin_channels", "security", async () => {
+  await test("B3.vendor_rejected_on_all_19_admin_channels", "security", async () => {
     const before = await userCount();
     const leaks = [];
     for (const ch of ADMIN_ONLY) { const r = await ipc(page, CALLS[ch]); if (!forbidden(r)) leaks.push(`${ch}:${r.ok ? "ALLOWED" : r.err}`); }
@@ -289,7 +297,7 @@ export async function run(c) {
       top: Object.keys(window.api).sort(), auth: Object.keys(window.api.auth).sort(),
       raw: [typeof window.ipcRenderer, typeof window.require, typeof window.process, typeof window.electron],
     }));
-    expect(JSON.stringify(r.top) === JSON.stringify(["auth", "cash", "dashboard", "inventory", "priceChanges", "products", "reports", "returns", "sales", "users"]), "top-level api: " + r.top);
+    expect(JSON.stringify(r.top) === JSON.stringify(["auth", "cash", "dashboard", "inventory", "priceChanges", "products", "receipts", "reports", "returns", "sales", "settings", "users"]), "top-level api: " + r.top);
     expect(JSON.stringify(r.auth) === JSON.stringify(["login", "logout", "me"]), "auth api: " + r.auth);
     expect(r.raw.every((t) => t === "undefined"), "raw Electron/Node globals exposed: " + r.raw);
   });
@@ -297,12 +305,12 @@ export async function run(c) {
     const v = await data.user("IFRAME", "vendor");
     await ui.login(page, v.pin);
     await page.waitForURL(/#\/sales$/, { timeout: 8000 });
-    const t = await page.evaluate(() => new Promise((resolve) => {
+    const t = await page.evaluate((appUrl) => new Promise((resolve) => {
       const f = document.createElement("iframe");
-      f.src = "http://localhost:5173/";
+      f.src = appUrl + "/";
       f.onload = () => resolve(typeof f.contentWindow.api);
       document.body.appendChild(f);
-    }));
+    }), APP_URL);
     expect(t === "undefined", "the preload API must not be injected into subframes, got " + t);
     return "same-origin iframe has no window.api; the main-frame check itself is covered by unit tests (sender-guard)";
   });
