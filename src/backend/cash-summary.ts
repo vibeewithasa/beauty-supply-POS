@@ -3,11 +3,14 @@
  *
  * Every figure comes from structured data, never from the text of a `reason`:
  *   - sales by payment method: the `sales` rows of the session (card sales are informational, never mixed with cash);
- *   - manual income / withdrawals: `cash_movements` WITHOUT a sale link (sale_id IS NULL; migration 0008);
- *   - expected cash: initial + cash sales + manual income - withdrawals, cross-checked against the register balance the
- *     system keeps (`current_amount`), which is what the cashier saw when closing.
- *   - returns: counted through the sale they belong to. A pending refund is NOT money paid: this change does not touch
- *     the refund policy and nothing here settles one.
+ *   - manual income / withdrawals: `cash_movements` that neither a sale (sale_id, migration 0008) nor a refund settlement
+ *     (refund_settlements.cash_movement_id, migration 0009) created. A refund paid in cash is NOT a manual withdrawal;
+ *   - refunds paid: `refund_settlements` of the session where the money was actually handed back (their payment date,
+ *     which can differ from the date of the return or of the sale). Cash refunds reduce the expected cash exactly once;
+ *     card refunds are informational (made on the terminal) and never reduce cash;
+ *   - expected cash: initial + cash sales + manual income - withdrawals - cash refunds, cross-checked against the register
+ *     balance the system keeps (`current_amount`), which is what the cashier saw when closing.
+ *   - returns: counted through the sale they belong to, by refund state. A pending refund is money still OWED, not paid.
  *
  * Visibility (provisional, like the sales history): an administrator sees every session; a vendor sees the open session
  * (the register is shared and they already operate it) and the sessions they opened or closed.
@@ -16,7 +19,14 @@ import { and, desc, eq, gte, isNull, lt, or, sql } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "./db";
-import { cashSessions as sessionsTable, cashMovements as movementsTable, sales as salesTable, returns as returnsTable, users as usersTable } from "./schema";
+import {
+  cashSessions as sessionsTable,
+  cashMovements as movementsTable,
+  sales as salesTable,
+  returns as returnsTable,
+  refundSettlements as settlementsTable,
+  users as usersTable,
+} from "./schema";
 import { BusinessError } from "./errors";
 import { centsFromDb, centsToDb } from "./money";
 import { parseId } from "./validation";
@@ -54,6 +64,8 @@ export async function listCashSessions(viewer: Viewer, data: unknown) {
       salesCount: sql<number>`(select count(*)::int from ${salesTable} where ${salesTable.cashSessionId} = ${sessionsTable.id})`,
       cashSales: sql<string>`(select coalesce(sum(${salesTable.total}), 0)::text from ${salesTable} where ${salesTable.cashSessionId} = ${sessionsTable.id} and ${salesTable.paymentMethod} = 'cash')`,
       cardSales: sql<string>`(select coalesce(sum(${salesTable.total}), 0)::text from ${salesTable} where ${salesTable.cashSessionId} = ${sessionsTable.id} and ${salesTable.paymentMethod} = 'card')`,
+      cashRefunds: sql<string>`(select coalesce(sum(${settlementsTable.amount}), 0)::text from ${settlementsTable} where ${settlementsTable.cashSessionId} = ${sessionsTable.id} and ${settlementsTable.paymentMethod} = 'cash')`,
+      cardRefunds: sql<string>`(select coalesce(sum(${settlementsTable.amount}), 0)::text from ${settlementsTable} where ${settlementsTable.cashSessionId} = ${sessionsTable.id} and ${settlementsTable.paymentMethod} = 'card')`,
     })
     .from(sessionsTable)
     .leftJoin(opener, eq(sessionsTable.openedBy, opener.id))
@@ -118,7 +130,14 @@ export async function getCashSessionSummary(viewer: Viewer, sessionIdRaw: unknow
   const manual = await db
     .select({ type: movementsTable.type, count: sql<number>`count(*)::int`, total: sql<string>`coalesce(sum(${movementsTable.amount}), 0)::text` })
     .from(movementsTable)
-    .where(and(eq(movementsTable.sessionId, sessionId), isNull(movementsTable.saleId)))
+    .where(
+      and(
+        eq(movementsTable.sessionId, sessionId),
+        isNull(movementsTable.saleId),
+        // a refund paid in cash is a refund, not a manual withdrawal
+        sql`not exists (select 1 from ${settlementsTable} where ${settlementsTable.cashMovementId} = ${movementsTable.id})`
+      )
+    )
     .groupBy(movementsTable.type);
   const mv = (t: "IN" | "OUT") => {
     const r = manual.find((x) => x.type === t);
@@ -131,7 +150,20 @@ export async function getCashSessionSummary(viewer: Viewer, sessionIdRaw: unknow
     .from(movementsTable)
     .where(and(eq(movementsTable.sessionId, sessionId), sql`${movementsTable.saleId} is not null`));
 
-  const expectedCents = centsFromDb(s.initialAmount) + centsFromDb(cash.total) + centsFromDb(manualIn.total) - centsFromDb(manualOut.total);
+  const paid = await db
+    .select({ method: settlementsTable.paymentMethod, count: sql<number>`count(*)::int`, total: sql<string>`coalesce(sum(${settlementsTable.amount}), 0)::text` })
+    .from(settlementsTable)
+    .where(eq(settlementsTable.cashSessionId, sessionId))
+    .groupBy(settlementsTable.paymentMethod);
+  const refundBy = (m: "cash" | "card") => {
+    const r = paid.find((x) => x.method === m);
+    return { count: r?.count ?? 0, total: r?.total ?? "0" };
+  };
+  const cashRefunds = refundBy("cash");
+  const cardRefunds = refundBy("card");
+
+  const expectedCents =
+    centsFromDb(s.initialAmount) + centsFromDb(cash.total) + centsFromDb(manualIn.total) - centsFromDb(manualOut.total) - centsFromDb(cashRefunds.total);
   const balanceCents = centsFromDb(s.currentAmount);
   const closed = s.finalAmount !== null;
 
@@ -158,6 +190,8 @@ export async function getCashSessionSummary(viewer: Viewer, sessionIdRaw: unknow
     initialAmount: s.initialAmount,
     sales: { count: cash.count + card.count, cash, card },
     movements: { manualIn, manualOut, saleLinkedCashIn: linked?.total ?? "0" },
+    // refunds whose money was handed back while this register was open (payment date, not return date)
+    refunds: { cash: cashRefunds, card: cardRefunds },
     expected: {
       fromRecords: centsToDb(expectedCents),
       registerBalance: s.currentAmount,
@@ -168,7 +202,8 @@ export async function getCashSessionSummary(viewer: Viewer, sessionIdRaw: unknow
       counted: s.finalAmount,
       difference: closed ? centsToDb(centsFromDb(s.finalAmount as string) - balanceCents) : null,
     },
-    // registered returns of this session's sales. Pending means owed to the customer, NOT paid.
+    // registered returns of this session's SALES, by refund state. Pending means owed to the customer, NOT paid; `paid` may have
+    // been paid in another session (see `refunds` for what was paid in this one).
     returns: { pending: ret("pending"), paid: ret("paid"), legacy: ret("legacy_unspecified") },
   };
 }

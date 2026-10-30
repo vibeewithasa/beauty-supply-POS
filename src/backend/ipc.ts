@@ -9,9 +9,10 @@ import {
   deletedProductsLog as deletedProductsLogTable,
 } from "./schema";
 import { eq, or, and, desc, sql, gte, lte, isNull } from "drizzle-orm";
-import { registerAuthHandlers, secureHandle } from "./auth";
+import { authorizeAdmin, registerAuthHandlers, secureHandle } from "./auth";
 import { createUser, deactivateUser, listActiveUsers, updateUser } from "./users-service";
 import { createReturn } from "./returns-service";
+import { createReturnWithRefund, settlePendingReturn } from "./refund-service";
 import {
   getSaleForReturn,
   listAllProducts,
@@ -74,6 +75,9 @@ const ACCESS: Record<string, Access> = {
   "settings:getBusiness": "admin",
   "settings:updateBusiness": "admin",
   "returns:create": "authenticated",
+  // authorized refunds: any signed-in user prepares them, an active administrator's PIN (checked in main) pays them
+  "returns:createWithRefund": "authenticated",
+  "returns:settleRefund": "authenticated",
   "returns:getAll": "authenticated",
   "returns:getSaleForReturn": "authenticated",
   "users:getAll": "admin",
@@ -208,6 +212,16 @@ export function registerIpcHandlers() {
   // ============= RETURNS =============
   handle("returns:create", async (ctx, data: unknown) =>
     createReturn(ctx.user.id, data)
+  );
+
+  // a new return AND the payment of its refund in one transaction; the PIN is verified in main, never stored or returned
+  handle("returns:createWithRefund", async (ctx, data: unknown, adminPin: unknown) =>
+    createReturnWithRefund(ctx.user.id, (pin) => authorizeAdmin(pin, ctx.user.id), adminPin, data)
+  );
+
+  // the payment of a return that was registered earlier as pending (no stock or lines are touched)
+  handle("returns:settleRefund", async (ctx, data: unknown, adminPin: unknown) =>
+    settlePendingReturn(ctx.user.id, (pin) => authorizeAdmin(pin, ctx.user.id), adminPin, data)
   );
 
   handle("returns:getAll", async () => listReturns());

@@ -10,9 +10,11 @@
  *  - The administrator is never named by the renderer: the PIN is verified against every active user (same cost and
  *    shape as the login) and exactly one match, who must be an administrator, authorizes. A wrong PIN, a seller's PIN, a
  *    deactivated administrator's PIN and an unknown PIN produce the very same error (no enumeration).
- *  - Attempts go through the installation-wide limiter (shared with the login: a bounded guessing budget for the whole
- *    PIN space, not one per window) and through a gate that serializes check -> verify -> record. Without the gate, a burst
- *    of parallel requests would all pass the "not locked" check before the first failure was counted.
+ *  - Attempts go through an installation-wide limiter (one budget for the whole PIN space, not one per window or per user)
+ *    that ONLY a successful administrator authorization resets: the caller must not share it with the login, whose counter
+ *    any seller can reset by signing in with their own PIN. Attempts also go through a gate that serializes
+ *    check -> verify -> record; without it a burst of parallel requests would all pass the "not locked" check before the
+ *    first failure was counted.
  *  - The PIN is never stored, logged or returned. Only the administrator id is handed back.
  */
 import { BusinessError } from "./errors.ts";

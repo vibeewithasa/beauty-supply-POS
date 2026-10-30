@@ -80,11 +80,11 @@ try {
     expect((await one(edb, "select count(*)::int n from pg_enum e join pg_type t on t.oid=e.enumtypid where t.typname='product_status' and e.enumlabel='deleted'")).n === 1, "enum value 'deleted'");
     expect((await one(edb, "select count(*)::int n from pg_constraint where connamespace='public'::regnamespace and not convalidated")).n === 0, "all constraints validated");
     const cnt = async (t) => (await one(edb, "select count(*)::int n from pg_constraint where connamespace='public'::regnamespace and contype=$1", [t])).n;
-    expect((await cnt("f")) === 11, "exactly 11 foreign keys (10 + cash_movements.sale_id), got " + (await cnt("f")));
-    expect((await cnt("c")) === 17, "exactly 17 CHECK constraints (14 + 3 on business_settings), got " + (await cnt("c")));
+    expect((await cnt("f")) === 16, "exactly 16 foreign keys (10 + cash_movements.sale_id + 5 on refund_settlements), got " + (await cnt("f")));
+    expect((await cnt("c")) === 19, "exactly 19 CHECK constraints (14 + 3 on business_settings + 2 on refund_settlements), got " + (await cnt("c")));
     expect((await one(edb, "select string_agg(e.enumlabel, ',' order by e.enumsortorder) v from pg_enum e join pg_type t on t.oid=e.enumtypid where t.typname='refund_status'")).v === "pending,paid,legacy_unspecified", "refund_status enum");
     expect((await one(edb, "select column_default d from information_schema.columns where table_name='returns' and column_name='refund_status'")).d.startsWith("'pending'"), "new returns default to pending");
-    expect((await one(edb, "select string_agg(indexname, ',' order by indexname) v from pg_indexes where schemaname='public' and indexdef like 'CREATE UNIQUE INDEX%' and indexdef like '%WHERE%'")).v === "cash_sessions_single_open,sales_operation_id_unique", "exactly two partial unique indexes: single open cash session, unique sale operation id");
+    expect((await one(edb, "select string_agg(indexname, ',' order by indexname) v from pg_indexes where schemaname='public' and indexdef like 'CREATE UNIQUE INDEX%' and indexdef like '%WHERE%'")).v === "cash_sessions_single_open,refund_settlements_cash_movement_unique,refund_settlements_operation_id_unique,sales_operation_id_unique", "exactly four partial unique indexes: single open cash session, unique sale operation id, unique refund operation id, one settlement per cash movement");
     expect((await one(edb, "select count(*)::int n from pg_indexes where indexname='sales_created_at_idx'")).n === 1, "sales are indexed by date for the paginated history");
     const cols = (await edb.query("select table_name||'.'||column_name c, is_nullable n from information_schema.columns where (table_name,column_name) in (('sales','operation_id'),('sale_items','product_name'),('sale_items','product_sku'))")).rows;
     expect(cols.length === 3 && cols.every((r) => r.n === "YES"), "0007 adds three NULLABLE columns (additive, no back-fill): " + JSON.stringify(cols));
@@ -93,7 +93,9 @@ try {
     const bs = await one(edb, "select id, name, paper_width, silent_print, address, phone, whatsapp, tax_info, logo_data from business_settings");
     expect(bs && bs.id === 1 && bs.name === "Estética Leal" && bs.paper_width === "80" && bs.silent_print === false && [bs.address, bs.phone, bs.whatsapp, bs.tax_info, bs.logo_data].every((v) => v === null), "default settings row: name only, every optional field empty: " + JSON.stringify(bs));
     expect((await one(edb, "select count(*)::int n from pg_indexes where indexname in ('users_pin_hash_unique','return_items_return_sale_item_unique')")).n === 2, "unique PIN index and unique return line index");
-    return "11 foreign keys, 17 CHECK, 2 partial unique indexes, enum values 'deleted' and refund_status, 0007 additive columns and default settings row";
+    const rs = await one(edb, "select count(*)::int n from refund_settlements");
+    expect(rs.n === 0, "0009 creates the refund ledger EMPTY (nothing is back-filled, nothing is marked as paid)");
+    return "16 foreign keys, 19 CHECK, 4 partial unique indexes, enum values 'deleted' and refund_status, 0007 additive columns, default settings row, empty 0009 ledger";
   });
   await test("MIG-02.constraints_reject_bad_data_at_the_database_level", "migration", async () => {
     await edb.query("insert into users(name,pin_hash,role) values('m','x','admin')");
@@ -297,6 +299,40 @@ try {
       expect((await one(db, "select refund_status from returns where reason='new'")).refund_status === "pending", "returns created after the migration start as pending");
       expect((await one(db, "select count(*)::int n from returns where refund_status='paid'")).n === 0, "nothing is ever 'paid' by the migration");
       return "legacy -> legacy_unspecified, new -> pending, no 'paid'";
+    } finally { await db.end(); }
+  });
+  await test("MIG-17.0009_adds_the_refund_ledger_without_touching_existing_data_or_meaning", "migration", async () => {
+    const name = await newDb();
+    await applyMigrations(name, makeFolder(9)); // everything up to 0008
+    const db = await connectRunDb(name);
+    try {
+      await db.query("insert into users(name,pin_hash,role) values('a','h1','admin'),('v','h2','vendor')");
+      await seedSale(db);
+      await db.query("insert into cash_movements(session_id,user_id,type,amount,reason) values(1,1,'OUT','3.00','retiro manual')");
+      await db.query("insert into returns(sale_id,total_refund,reason,processed_by,refund_status) values(1,'10.00','legacy',1,'legacy_unspecified'),(1,'10.00','pendiente',1,'pending')");
+      await db.query("insert into return_items(return_id,sale_item_id,product_id,quantity,refund_amount) values(1,1,1,1,'10.00')");
+      const before = await fingerprint(db);
+      const statuses = JSON.stringify((await db.query("select id, refund_status from returns order by id")).rows);
+      await applyMigrations(name);
+      expect((await fingerprint(db)) === before, "every pre-existing table is byte-for-byte identical after 0009");
+      expect(JSON.stringify((await db.query("select id, refund_status from returns order by id")).rows) === statuses, "legacy stays legacy_unspecified, pending stays pending: nothing becomes 'paid'");
+      expect((await one(db, "select count(*)::int n from refund_settlements")).n === 0, "no settlement is invented for old returns");
+      // the new ledger enforces its own rules
+      await expectSqlError(db, "insert into refund_settlements(return_id,payment_method,amount,authorized_by,processed_by) values(2,'cash','10.00',1,2)", "23514", "cash settlement without register or movement");
+      await expectSqlError(db, "insert into refund_settlements(return_id,payment_method,amount,authorized_by,processed_by,cash_session_id,cash_movement_id,external_reference) values(2,'cash','10.00',1,2,1,1,'ref')", "23514", "a cash settlement cannot carry an external reference");
+      await expectSqlError(db, "insert into refund_settlements(return_id,payment_method,amount,authorized_by,processed_by,cash_session_id,cash_movement_id) values(2,'card','10.00',1,2,1,1)", "23514", "a card settlement cannot own a register movement");
+      await expectSqlError(db, "insert into refund_settlements(return_id,payment_method,amount,authorized_by,processed_by) values(2,'card','-1.00',1,2)", "23514", "negative amount");
+      await expectSqlError(db, "insert into refund_settlements(return_id,payment_method,amount,authorized_by,processed_by) values(99,'card','1.00',1,2)", "23503", "settlement of an unknown return");
+      await expectSqlError(db, "insert into refund_settlements(return_id,payment_method,amount,authorized_by,processed_by) values(2,'card','1.00',99,2)", "23503", "authorized by an unknown user");
+      await db.query("insert into refund_settlements(return_id,payment_method,amount,authorized_by,processed_by,external_reference,operation_id) values(2,'card','10.00',1,2,'T-1','op-mig-17-a')");
+      await expectSqlError(db, "insert into refund_settlements(return_id,payment_method,amount,authorized_by,processed_by) values(2,'card','10.00',1,2)", "23505", "a refund cannot be paid twice");
+      await db.query("insert into returns(sale_id,total_refund,reason,processed_by) values(1,'5.00','otra',1)");
+      await expectSqlError(db, "insert into refund_settlements(return_id,payment_method,amount,authorized_by,processed_by,operation_id) values(3,'card','5.00',1,2,'op-mig-17-a')", "23505", "an operation id belongs to one settlement");
+      await db.query("insert into cash_movements(session_id,user_id,type,amount,reason) values(1,2,'OUT','5.00','Reembolso')");
+      await db.query("insert into refund_settlements(return_id,payment_method,amount,authorized_by,processed_by,cash_session_id,cash_movement_id) values(3,'cash','5.00',1,2,1,2)");
+      await db.query("insert into returns(sale_id,total_refund,reason,processed_by) values(1,'1.00','x',1)");
+      await expectSqlError(db, "insert into refund_settlements(return_id,payment_method,amount,authorized_by,processed_by,cash_session_id,cash_movement_id) values(4,'cash','1.00',1,2,1,2)", "23505", "one register movement cannot back two refunds");
+      return "0009 is purely additive: old data and meanings intact, the ledger refuses incoherent, duplicated or orphan rows";
     } finally { await db.end(); }
   });
   const RETURN_BLOCKERS = [

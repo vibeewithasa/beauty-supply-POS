@@ -30,7 +30,7 @@ export const invTypeEnum = pgEnum("inventory_type", [
 export const cashMovementEnum = pgEnum("cash_movement_type", ["IN", "OUT"]);
 export const paymentMethodEnum = pgEnum("payment_method", ["cash", "card"]);
 // Refund settlement: a registered return is NOT a paid refund. 'pending' = owed, not yet paid out;
-// 'paid' is reserved for a future real settlement operation (nothing sets it today);
+// 'paid' is set ONLY together with a refund_settlements row (administrator-authorized, money confirmed handed back);
 // 'legacy_unspecified' marks returns registered before this state existed (never reinterpreted as paid).
 export const refundStatusEnum = pgEnum("refund_status", ["pending", "paid", "legacy_unspecified"]);
 export const cashSessionStatusEnum = pgEnum("cash_session_status", [
@@ -274,6 +274,48 @@ export const returnItems = pgTable(
     check("return_items_refund_non_negative", sql`${t.refundAmount} >= 0`),
     // one line per sale item inside a return
     uniqueIndex("return_items_return_sale_item_unique").on(t.returnId, t.saleItemId),
+  ]
+);
+
+// The settlement entry of a refund: how, when and under whose authority the money of a return was handed back.
+// One row per return at most (a refund cannot be paid twice). 'cash' leaves the register (cash_movements OUT, linked here);
+// 'card' is a refund made externally on the card terminal: it never touches the cash balance and has no movement.
+export const refundSettlements = pgTable(
+  "refund_settlements",
+  {
+    id: serial("id").primaryKey(),
+    returnId: integer("return_id")
+      .notNull()
+      .references(() => returns.id),
+    paymentMethod: paymentMethodEnum("payment_method").notNull(),
+    amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
+    // the administrator whose PIN authorized the payment, and the logged-in user who attended (may be the same person)
+    authorizedBy: integer("authorized_by")
+      .notNull()
+      .references(() => users.id),
+    processedBy: integer("processed_by")
+      .notNull()
+      .references(() => users.id),
+    paidAt: timestamp("paid_at", { withTimezone: true, mode: "date" }).defaultNow().notNull(),
+    // cash: the register the money left; card: the open register at that moment, for the closing report only (nullable)
+    cashSessionId: integer("cash_session_id").references(() => cashSessions.id),
+    cashMovementId: integer("cash_movement_id").references(() => cashMovements.id),
+    externalReference: varchar("external_reference", { length: 64 }),
+    // Client key of one payment attempt: a retry or a double click returns the same settlement.
+    operationId: text("operation_id"),
+  },
+  (t) => [
+    check("refund_settlements_amount_non_negative", sql`${t.amount} >= 0`),
+    uniqueIndex("refund_settlements_return_unique").on(t.returnId),
+    uniqueIndex("refund_settlements_operation_id_unique").on(t.operationId).where(sql`${t.operationId} is not null`),
+    uniqueIndex("refund_settlements_cash_movement_unique").on(t.cashMovementId).where(sql`${t.cashMovementId} is not null`),
+    index("refund_settlements_paid_at_idx").on(t.paidAt),
+    index("refund_settlements_session_idx").on(t.cashSessionId),
+    // cash always leaves a register through a movement; a card refund never creates one; references belong to card only
+    check(
+      "refund_settlements_method_coherent",
+      sql`(${t.paymentMethod} = 'cash' and ${t.cashSessionId} is not null and ${t.cashMovementId} is not null and ${t.externalReference} is null) or (${t.paymentMethod} = 'card' and ${t.cashMovementId} is null)`
+    ),
   ]
 );
 

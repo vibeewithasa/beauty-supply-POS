@@ -62,6 +62,8 @@ contextBridge.exposeInMainWorld("api", {
   },
   returns: {
     create: (data: any) => invoke("returns:create", data),
+    createWithRefund: (data: any, adminPin: string) => invoke("returns:createWithRefund", data, adminPin),
+    settleRefund: (data: any, adminPin: string) => invoke("returns:settleRefund", data, adminPin),
     getAll: () => invoke("returns:getAll"),
     getSaleForReturn: (saleId: number) => invoke("returns:getSaleForReturn", saleId),
   },

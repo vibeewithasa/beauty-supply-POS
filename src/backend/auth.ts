@@ -30,8 +30,12 @@ const store = new SessionStore();
 // One limiter for the whole installation (the PIN space is tiny): another window cannot reset it.
 // POS_LOGIN_* overrides are honored only in development builds, never in a packaged app.
 const limiter = new LoginLimiter(loadLimiterConfig(app.isPackaged ? {} : process.env));
-// PIN attempts (login and administrator authorization) are checked one at a time: a burst of parallel requests must not
-// all pass the "not locked" check before the first failure has been counted.
+// Administrator authorization (refund payments) has its OWN installation-wide counter. It must not share the login's: a
+// successful login resets that one, so a signed-in seller could alternate "4 guesses at the administrator PIN, then log in
+// with their own PIN" for ever. Here only a successful administrator authorization (or a quiet period) resets it.
+const authorizationLimiter = new LoginLimiter(loadLimiterConfig(app.isPackaged ? {} : process.env));
+// PIN attempts are checked one at a time: a burst of parallel requests must not all pass the "not locked" check before the
+// first failure has been counted.
 const attemptGate = new Gate();
 
 const guardOptions = (): GuardOptions => ({
@@ -130,12 +134,12 @@ async function upgradeLegacyHash(userId: number, oldHash: string, pin: string) {
 /**
  * Authorizes ONE operation with the PIN of an active administrator (the operator's session is not touched).
  * The PIN is checked here, in main, against the users table; the renderer never names the administrator.
- * Returns only the administrator's id. Shares the installation-wide attempt limiter with the login.
+ * Returns only the administrator's id. Failed attempts count against an installation-wide limiter of its own.
  */
 export async function authorizeAdmin(pin: unknown, operatorId: number): Promise<{ adminId: number }> {
   return authorizeAdminPin(
     {
-      limiter,
+      limiter: authorizationLimiter,
       gate: attemptGate,
       loadActiveUsers: () =>
         db

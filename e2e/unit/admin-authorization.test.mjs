@@ -87,10 +87,11 @@ test("failures lock, a correct PIN is refused while locked, and the lock expires
   for (let i = 0; i < 2; i++) assert.equal(await code(authorizeAdminPin(deps, "000000")), "AUTORIZACION_INVALIDA", "success reset the counter");
 });
 
-test("the limiter is the installation-wide one: failures made elsewhere (login) count here and vice versa", async () => {
-  const { deps, limiter } = await world();
-  limiter.fail(); limiter.fail(); limiter.fail(); // three failed logins
-  assert.equal(await code(authorizeAdminPin(deps, "246810")), "AUTORIZACION_BLOQUEADA");
+test("the budget is one for the whole installation: it does not depend on which PIN or user is being guessed", async () => {
+  const { deps } = await world();
+  // three different wrong guesses (a seller's PIN, an unknown PIN, a malformed one) spend the same budget
+  for (const pin of [ "135791", "555555", "abc" ]) assert.equal(await code(authorizeAdminPin(deps, pin)), "AUTORIZACION_INVALIDA");
+  assert.equal(await code(authorizeAdminPin(deps, "246810")), "AUTORIZACION_BLOQUEADA", "the right PIN is refused: the lock is not per user");
 });
 
 test("a burst of parallel guesses cannot exceed the attempt budget (no check-then-act race)", async () => {

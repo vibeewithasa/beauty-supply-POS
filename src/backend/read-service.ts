@@ -3,9 +3,11 @@
  * reports). No writes, no locks: the authoritative checks of every write stay in the write services.
  */
 import { and, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { db } from "./db";
 import {
   products as productsTable,
+  refundSettlements as settlementsTable,
   sales as salesTable,
   saleItems as saleItemsTable,
   users as usersTable,
@@ -69,8 +71,13 @@ export async function listPriceChanges(productIdRaw?: unknown) {
   return productId === null ? await q : await q.where(eq(priceChangesTable.productId, productId));
 }
 
-/** Returns history with who processed each one. refundStatus says whether the money was actually paid. */
+/**
+ * Returns history with who processed each one. refundStatus says whether the money was actually paid; when it was, the
+ * settlement columns say how (cash / card), when, with which reference and who attended and authorized it (NULL otherwise).
+ */
 export async function listReturns() {
+  const authorizer = alias(usersTable, "authorizer");
+  const payer = alias(usersTable, "payer");
   return await db
     .select({
       id: returnsTable.id,
@@ -81,9 +88,21 @@ export async function listReturns() {
       createdAt: returnsTable.createdAt,
       processedBy: returnsTable.processedBy,
       processedByName: usersTable.name,
+      paymentMethod: settlementsTable.paymentMethod,
+      paidAmount: settlementsTable.amount,
+      paidAt: settlementsTable.paidAt,
+      externalReference: settlementsTable.externalReference,
+      cashSessionId: settlementsTable.cashSessionId,
+      authorizedBy: settlementsTable.authorizedBy,
+      authorizedByName: authorizer.name,
+      paidBy: settlementsTable.processedBy,
+      paidByName: payer.name,
     })
     .from(returnsTable)
     .leftJoin(usersTable, eq(returnsTable.processedBy, usersTable.id))
+    .leftJoin(settlementsTable, eq(settlementsTable.returnId, returnsTable.id))
+    .leftJoin(authorizer, eq(settlementsTable.authorizedBy, authorizer.id))
+    .leftJoin(payer, eq(settlementsTable.processedBy, payer.id))
     .orderBy(desc(returnsTable.createdAt), desc(returnsTable.id))
     .limit(100);
 }

@@ -39,6 +39,8 @@ const CALLS = {
   "sales:getById": "api.sales.getById(999999)",
   "returns:create": "api.returns.create({saleId:999999,items:[],reason:'x'})",
   "returns:getAll": "api.returns.getAll()",
+  "returns:createWithRefund": "api.returns.createWithRefund({saleId:999999,reason:'x',items:[{saleItemId:1,quantity:1}],payment:{method:'card',confirmed:true},operationId:'op-sec-unauth-01'},'0000')",
+  "returns:settleRefund": "api.returns.settleRefund({returnId:999999,payment:{method:'card',confirmed:true},operationId:'op-sec-unauth-02'},'0000')",
   "users:getAll": "api.users.getAll()",
   "users:create": "api.users.create({name:'SEC-X',role:'admin',pin:'1234'})",
   "users:update": "api.users.update(999999,{name:'x',role:'admin'})",
@@ -100,7 +102,7 @@ export async function run(c) {
   await test("A2.public_me_without_session_is_null", "security", async () => {
     expect((await me()) === null, "me() must be null before login");
   });
-  await test("A3.all_40_protected_channels_rejected_without_session", "security", async () => {
+  await test("A3.all_42_protected_channels_rejected_without_session", "security", async () => {
     const before = await userCount();
     const leaks = [];
     for (const [ch, expr] of Object.entries(CALLS)) { const r = await ipc(page, expr); if (!unauthenticated(r)) leaks.push(`${ch}:${r.ok ? "ALLOWED" : r.err}`); }

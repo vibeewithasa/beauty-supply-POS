@@ -53,6 +53,8 @@ declare global {
       };
       returns: {
         create(data: any): Promise<any>;
+        createWithRefund(data: any, adminPin: string): Promise<any>;
+        settleRefund(data: any, adminPin: string): Promise<any>;
         getAll(): Promise<any[]>;
         getSaleForReturn(saleId: number): Promise<any>;
       };
