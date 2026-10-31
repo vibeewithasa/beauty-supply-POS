@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
+import brandIcon from "@/assets/estetica-leal-icon.png";
 import { describeIpcError } from "@/lib/ipc-error";
 
 // 4-digit PINs of existing accounts still work; new PINs have 6 to 8 digits (enforced by the backend).
@@ -102,9 +103,11 @@ export default function LoginPage() {
       <Card className="w-full max-w-md shadow-2xl">
         <div className="p-8">
           <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold text-primary mb-2">
-              POS Estética
+            <img src={brandIcon} alt="" width={72} height={72} className="mx-auto mb-3 rounded-2xl" />
+            <h1 className="text-3xl font-bold text-primary mb-1">
+              Estética Leal
             </h1>
+            <p className="text-sm text-muted-foreground mb-2">Punto de venta</p>
             <p className="text-muted-foreground">
               Ingresa tu PIN para comenzar
             </p>

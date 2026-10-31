@@ -123,6 +123,11 @@ Key source directories:
 - Review migration and backup procedures before storing business data.
 - This README is a project overview, not a security certification.
 
+## Demonstration on a laptop
+
+`npm run package` builds a Windows installer (`release/`). `docs/DEMO_INSTALL_LAPTOP.md` explains how to install PostgreSQL and the installer on a laptop and create a database with
+fictional data; `docs/DEMO_CHECKLIST.md` is the presentation checklist. `npm run test:demo` rehearses the whole procedure without installing anything.
+
 ## Roadmap
 
 - [ ] Complete return and refund workflows

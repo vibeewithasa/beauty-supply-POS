@@ -17,7 +17,7 @@ export async function run(c) {
   const ids0 = await maxIds();
   let sess;
 
-  await test("A0.login_screen_renders", "e2e", async () => { await page.getByText("POS Estética").first().waitFor(); await shot("login"); });
+  await test("A0.login_screen_renders", "e2e", async () => { await page.getByText("Estética Leal").first().waitFor(); await shot("login"); });
   await test("A1.login_wrong_pin", "e2e", async () => { await ui.login(page, wrongPin); await page.getByText("PIN incorrecto").waitFor({ timeout: 5000 }); });
   await test("A2.login_admin_goes_to_dashboard", "e2e", async () => { await ui.login(page, admin.pin); await page.waitForURL(/#\/dashboard$/, { timeout: 8000 }); });
   await test("B1.dashboard_loads_without_error", "e2e", async () => {

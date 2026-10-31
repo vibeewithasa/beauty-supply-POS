@@ -1,6 +1,6 @@
 {
   "name": "beauty-supply-pos",
-  "version": "0.1.0",
+  "version": "0.7.0",
   "private": true,
   "main": "dist/main/main.cjs",
   "type": "module",
@@ -12,7 +12,7 @@
     "dev:preload": "tsup src/preload/preload.ts --format cjs --out-dir dist/preload --target node18 --watch --external electron",
     "dev:renderer": "vite",
     "electron": "wait-on tcp:5173 && electron .",
-    "build": "tsup src/main/main.ts --format cjs --out-dir dist/main --target node18 --external electron,electron-updater && tsup src/preload/preload.ts src/preload/setup-preload.ts --format cjs --out-dir dist/preload --target node18 --external electron && vite build",
+    "build": "tsup src/main/main.ts --format cjs --out-dir dist/main --target node18 --external electron,electron-updater && tsup src/preload/preload.ts src/preload/setup-preload.ts --format cjs --out-dir dist/preload --target node18 --external electron && tsup scripts/demo-setup.mjs --format cjs --out-dir dist/tools --target node18 --shims && vite build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint .",
     "package": "npm run build && electron-builder --win",
@@ -46,6 +46,7 @@
     "test:all": "npm run test:unit && node e2e/run.mjs all && node e2e/migrations.mjs && node e2e/ops.mjs && npm run test:legacy",
     "package:dir": "npm run build && electron-builder --win dir",
     "test:packaged": "node e2e/packaged.mjs",
+    "test:demo": "node e2e/demo.mjs",
     "db:status": "node ./scripts/db-status.mjs",
     "db:backup": "node ./scripts/db-backup.mjs",
     "db:restore": "node ./scripts/db-restore.mjs",
@@ -67,6 +68,17 @@
       "!**/*.map"
     ],
     "asar": true,
+    "extraResources": [
+      {
+        "from": "tools/demo",
+        "to": "tools",
+        "filter": [
+          "Preparar-Base-Demo.cmd",
+          "Preparar-Base-Demo.ps1",
+          "LEEME.txt"
+        ]
+      }
+    ],
     "win": {
       "target": [
         {
@@ -76,7 +88,18 @@
           ]
         }
       ],
-      "signAndEditExecutable": false
+      "icon": "assets/brand/icon.png",
+      "signAndEditExecutable": true
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Estética Leal POS",
+      "uninstallDisplayName": "Estética Leal POS (Beauty POS)",
+      "deleteAppDataOnUninstall": false,
+      "runAfterFinish": true
     }
   },
   "dependencies": {

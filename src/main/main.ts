@@ -77,7 +77,7 @@ function showStartupFailure(headline: string, detail: string) {
     webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, devTools: isDev },
   });
   const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-  const html = `<!doctype html><meta charset="utf-8"><title>Beauty POS - Error</title>
+  const html = `<!doctype html><meta charset="utf-8"><title>Estética Leal POS - Error</title>
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
 <body style="font-family:sans-serif;margin:32px"><h2>${esc(headline)}</h2>
 <p>La aplicación no puede operar de forma segura. No se realizó ninguna operación.</p>

@@ -30,7 +30,7 @@ function pageHtml(nonce: string, headline: string, reason: string): string {
   const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
   return `<!doctype html><html lang="es"><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'">
-<title>Beauty POS - Configuración inicial</title>
+<title>Estética Leal POS - Configuración inicial</title>
 <style>
 body{font-family:"Segoe UI",Arial,sans-serif;margin:0;background:#f4f5f4;color:#1c2b27}
 main{max-width:640px;margin:24px auto;padding:0 20px 40px}
@@ -132,7 +132,7 @@ export function showSetupWindow(headline: string, reason: string): BrowserWindow
   const win = new BrowserWindow({
     width: 720,
     height: 860,
-    title: "Beauty POS - Configuración inicial",
+    title: "Estética Leal POS - Configuración inicial",
     webPreferences: {
       preload: path.join(__dirname, "../preload/setup-preload.cjs"),
       nodeIntegration: false,
