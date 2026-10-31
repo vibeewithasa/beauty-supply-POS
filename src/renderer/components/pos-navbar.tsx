@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import brandIcon from "@/assets/estetica-leal-icon.png";
 import {
   ShoppingCart,
   Plus,
@@ -91,8 +92,9 @@ export function POSNavbar() {
   return (
     <nav aria-label="Navegación principal" className="bg-primary text-primary-foreground border-b border-primary/20 sticky top-0 z-40">
       <div className="flex items-center justify-between gap-3 px-4 pt-2">
-        <div className="flex items-baseline gap-2 min-w-0">
-          <h1 className="text-lg font-bold whitespace-nowrap">POS Estética</h1>
+        <div className="flex items-center gap-2 min-w-0">
+          <img src={brandIcon} alt="" width={26} height={26} className="rounded-md flex-shrink-0" />
+          <h1 className="text-lg font-bold whitespace-nowrap">Estética Leal</h1>
           <span className="text-sm opacity-80 truncate">• {user.name}</span>
         </div>
         <Button onClick={handleLogout} variant="ghost" size="sm" className="gap-2 h-10 whitespace-nowrap flex-shrink-0">
