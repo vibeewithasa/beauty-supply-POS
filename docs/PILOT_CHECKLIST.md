@@ -9,6 +9,8 @@ Verdicts used in the reports (they are three different things):
 * **READY FOR PILOT**: the product may be tried in a controlled, supervised way on a prepared PC.
 * **READY FOR STORE**: installation, security, backups, hardware and daily operation meet what was agreed. **Not reached** (see the end).
 
+> For presenting the system on a laptop with fictional data (not a pilot), see `docs/DEMO_INSTALL_LAPTOP.md` and `docs/DEMO_CHECKLIST.md`.
+
 ## 1. Preparing a new PC
 
 1. Windows 10/11, a Windows user account for the store (not shared with unrelated users). Keep BitLocker/device encryption on if the PC can be lost.

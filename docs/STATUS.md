@@ -106,6 +106,12 @@ describes the early MVP and is intentionally not edited here.
 - Lighter-weight leftovers: a legacy unused `drizzle/migrations/0001_initial.sql`,
   the renderer lint is still gentle (warnings only for unused names).
 
+## Demonstration build for the owner's laptop (Sprint 07)
+
+* A demonstrable installer, a documented laptop procedure (`docs/DEMO_INSTALL_LAPTOP.md`), a fictional dataset (24 products, 3 closed days, 12 sales, 2 returns) and a presentation checklist
+  (`docs/DEMO_CHECKLIST.md`) exist. Visual identity: "Estética Leal" in the window title, login, navigation and ticket; the "EL" icon is provisional. No commercial data is invented.
+* Verified here: everything driven by `npm run test:demo`. **Not verified:** running/uninstalling the NSIS installer, the interactive PowerShell prompts, a physical printer/reader/terminal (manual list in the checklist, section D).
+
 ## Requirements before distributing to a real store
 
 1. (done) PIN storage is salted scrypt. 2. (done) Packaged renderer and configuration path.
