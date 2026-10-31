@@ -1,0 +1,20 @@
+ESTETICA LEAL POS - BASE DE DEMOSTRACION
+========================================
+
+Esta carpeta viene con la aplicacion instalada (resources\tools). Sirve para preparar, en el PostgreSQL de ESTA laptop, una
+base NUEVA con datos FICTICIOS para presentar el sistema.
+
+1. Instala PostgreSQL antes (ver docs\DEMO_INSTALL_LAPTOP.md del proyecto, paso 1) y anota la contrasena del administrador.
+2. Doble clic en  Preparar-Base-Demo.cmd
+3. Contesta: contrasena del administrador de PostgreSQL, nombre de la base (Enter = beauty_pos_demo), un PIN para
+   "Administrador Demo" y otro para "Vendedor Demo" (6 a 8 digitos cada uno, distintos).
+4. Al terminar, la ventana muestra el servidor, la base, el usuario y la contrasena que debes escribir en la ventana de
+   configuracion de Estetica Leal POS (la contrasena generada se muestra UNA sola vez).
+5. Abre Estetica Leal POS: la primera vez muestra la ventana de configuracion. Escribe esos datos, "Probar conexion",
+   "Guardar y reiniciar". Despues entra con el PIN de demostracion.
+
+Importante
+- Los PIN NO vienen en el instalador: los eliges tu en el paso 3 y solo se guardan como hash.
+- Los datos (productos, tres dias de ventas, una devolucion pagada y otra pendiente) son inventados.
+- La herramienta nunca modifica una base que ya existe; si algo falla, elimina lo que alcanzo a crear.
+- Para empezar de cero: borra la base de demostracion desde pgAdmin y vuelve a ejecutar el paso 2 con otro nombre o el mismo.

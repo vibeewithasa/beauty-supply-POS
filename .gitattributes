@@ -2,3 +2,7 @@
 # core.autocrlf says, so a database migrated from one machine is recognised by the app built on another.
 drizzle/*.sql text eol=lf
 drizzle/meta/*.json text eol=lf
+# Windows scripts for the demonstration laptop: CRLF so cmd.exe and PowerShell 5.1 read them exactly as written
+tools/demo/*.cmd text eol=crlf
+tools/demo/*.ps1 text eol=crlf
+tools/demo/*.txt text eol=crlf
