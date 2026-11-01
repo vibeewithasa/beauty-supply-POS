@@ -1,0 +1,46 @@
+import type { Layout, Manifest } from "./managed-pg.mjs";
+export type Mode = "demo" | "clean";
+export type StepEvent = { id: string; label: string; status: "running" | "done" | "failed" };
+export type Connection = { host: string; port: number; database: string; user: string; password: string };
+export type DemoInput = { adminPin: string; vendorPin: string };
+export type CleanInput = { adminName: string; adminPin: string };
+export const MODES: Record<Mode, { database: string; role: string; label: string }>;
+export const RESET_CONFIRMATION: string;
+export function validateInputs(mode: string, input: unknown): void;
+export function provisionManagedInstance(o: {
+  root: string;
+  bundleDir: string;
+  migrationsDir: string;
+  mode: Mode;
+  input: DemoInput | CleanInput;
+  appVersion?: string;
+  onStep?: (s: StepEvent) => void;
+  persist: (o: { connection: Connection; adminPassword: string }) => Promise<void>;
+  /** undoes what `persist` stored when a later step fails */
+  unpersist?: () => Promise<void>;
+  minFreeBytes?: number;
+  portFirst?: number;
+  portLast?: number;
+}): Promise<{ layout: Layout; manifest: Manifest; connection: Connection; summary: unknown; logFile: string }>;
+export function loadManaged(root: string, o?: { requireReady?: boolean }): Promise<{ layout: Layout; manifest: Manifest; runtimeDir: string }>;
+export function backupManaged(o: { root: string; adminPassword: string; label?: string }): Promise<{ file: string; summary: unknown }>;
+export function updateSchema(o: { root: string; adminPassword: string; migrationsDir: string }): Promise<{ changed: boolean; backup?: string }>;
+export function resetDemo(o: {
+  root: string;
+  adminPassword: string;
+  confirm: string;
+  input: DemoInput;
+  migrationsDir: string;
+  persist: (o: { connection: Connection; adminPassword: string }) => Promise<void>;
+  onStep?: (s: StepEvent) => void;
+}): Promise<{ backup: string; summary: unknown }>;
+export function managedStatus(o: { root: string; adminPassword: string; migrationsDir: string }): Promise<{
+  mode: Mode;
+  database: string;
+  port: number;
+  postgresVersion: string;
+  installedAt: string;
+  schema: { status: string; applied: number; required: number };
+  backups: { folder: string; count: number; latest: string | null };
+  dataFolder: string;
+}>;

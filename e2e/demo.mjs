@@ -13,7 +13,7 @@
 //      the real UI: history, receipt, cash history, inventory, a cash sale, a card sale, a refund authorised with the administrator
 //      PIN, a pending refund paid later, cash closing, restart persistence and the vendor's restricted view.
 //
-// Build first:  npm run package   (creates release/Beauty POS Setup <version>.exe and release/win-unpacked)
+// Build first:  npm run package   (creates release/Estética Leal POS Setup <version>.exe and release/win-unpacked)
 // It never touches an existing database: it creates (and finally drops) its own beauty_pos_e2e_demo* database and pos_e2e_demo_* role.
 import path from "node:path";
 import fs from "node:fs";
@@ -31,7 +31,7 @@ import { USERS, expectedTotals, productBySku } from "../scripts/lib/demo-data.mj
 
 const require = createRequire(import.meta.url);
 const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
-const INSTALLER = path.join(ROOT, "release", `Beauty POS Setup ${pkg.version}.exe`);
+const INSTALLER = path.join(ROOT, "release", `Estética Leal POS Setup ${pkg.version}.exe`);
 const UNPACKED_ASAR = path.join(ROOT, "release", "win-unpacked", "resources", "app.asar");
 const SEVEN_ZIP = (() => {
   const base = path.join(process.env.LOCALAPPDATA || "", "electron-builder", "Cache", "7zip@1.0.0");
@@ -232,6 +232,11 @@ try {
   await test("DEMO-07.first_start_shows_the_setup_window_without_the_repository_or_dev_tools", "integration", async () => {
     L = await launchInstalled(userData);
     page = L.page;
+    // 0.8.0: with nothing configured the installer's own wizard comes first; this rehearsal is the explicit "my own PostgreSQL" path
+    await page.locator("#btn-advanced").waitFor({ timeout: 30000 });
+    const opened = L.app.waitForEvent("window", { timeout: 20000 });
+    await page.locator("#btn-advanced").click();
+    page = await opened;
     await page.locator("#btn-test").waitFor({ timeout: 20000 });
     expect(/Estética Leal/.test(await page.title()) || /Estética Leal/.test(await page.evaluate(() => document.body.innerText)), "the setup window carries the Estética Leal identity");
     expect(await page.evaluate(() => typeof window.api) === "undefined", "no application API before the connection is configured");

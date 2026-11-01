@@ -168,10 +168,27 @@ with real data. The E2E runners create their own `beauty_pos_e2e_<id>` database,
 is used by the tests only to find the local server and its credentials. Run the tests next to a developer session with
 `E2E_PORT=5183`.
 
+## The dedicated instance of the self-contained installer
+
+Installations made by the 0.8.0 installer own a PostgreSQL that nobody else uses (design: `docs/SELF_CONTAINED_INSTALLER.md`). Everything lives under `%LOCALAPPDATA%\Estetica Leal POS` (permissions: this Windows account, SYSTEM and Administrators):
+`installation.json` (what this installer created), `cluster-admin.json` (superuser password, protected by Windows), `runtime\<version>` (verified copy of PostgreSQL), `data`, `logs`, `backups`.
+
+* **It starts and stops with the application.** Opening Estética Leal POS starts it (after proving it is the installation's own); closing the application stops it cleanly. It is not a Windows service.
+* **Backups:** `"Beauty POS.exe" --manage` (or `resources\tools\Mantenimiento.cmd`) -> *Crear respaldo ahora* (verified `pg_dump` into `backups\`, with its SHA-256 summary). Copy it to a second place (USB). There is no scheduled backup for this instance yet.
+* **Restore:** a backup is a standard, verified PostgreSQL archive (`.dump` + `.summary.json`), and restoring it (always into a NEW database, with row-by-row verification) is implemented and tested in the library (`restoreToNewDatabase`), but there is **no restore button yet**:
+  the cluster superuser's password is random and only the application can read it (Windows protection), so today a restore is done by an operator with the project (`scripts/lib/db-ops.mjs`). Keep your backups: they are the way to recover. Never restore over the live database.
+* **Schema updates** happen only in the maintenance window, after a verified backup (*Actualizar estructura*); the regular application only verifies the schema.
+* **Stopping it by hand** (for example after uninstalling with the application open): `& "$env:LOCALAPPDATA\Estetica Leal POS\runtime\18.6-1\bin\pg_ctl.exe" stop -D "$env:LOCALAPPDATA\Estetica Leal POS\data" -m fast`. It only ever touches this folder.
+* **Updating the application** with the installer on top never touches this folder. A newer PostgreSQL of the same major version is adopted automatically (the old copy is kept if the new one does not start); a different
+  major version is refused (needs `pg_upgrade`).
+* **Retiring an installation (manual, irreversible).** Nothing deletes it for you. Only if you are sure the data is not needed (and after copying a backup elsewhere): 1) close the application and make sure no `postgres.exe` runs from that folder
+  (`Get-Process postgres | Where-Object Path -like "$env:LOCALAPPDATA\Estetica Leal POS*"`, and stop only those); 2) confirm the folder is the installation's own: `installation.json` has an `installId` equal to the one inside `data\estetica-leal-managed.json`;
+  3) delete the folder `%LOCALAPPDATA%\Estetica Leal POS` and `%APPDATA%\Beauty POS\config.json`. **Never** delete or stop a PostgreSQL that is not under that folder: another program may own it.
+
 ## Known limits
 
-* The administrative commands are Node scripts: a store machine that has only the installed app needs the project's `scripts`
-  folder and Node.js (or an operator who does). Bundling them with the installer is future work.
+* The administrative commands (`db:*`) are Node scripts for a development checkout or an external PostgreSQL. For the self-contained installation the equivalent operations (backup, schema update, demonstration reset)
+  are in the maintenance window (`--manage`) and need nothing else installed; restoring still uses the PostgreSQL tools as shown above.
 * Backups are as good as their second copy; there is no cloud/off-site step here.
 * **Line endings of the migrations.** drizzle records the SHA-256 of each migration file's bytes, so the same migration checked out with LF or with CRLF (Windows `core.autocrlf=true`)
   has two hashes. The startup check recognises a migration by its raw, LF and CRLF hashes (only line endings are normalised: any other edit is still refused), and `.gitattributes`
