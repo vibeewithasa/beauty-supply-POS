@@ -317,7 +317,8 @@ try {
     await ui.nav(page, "Historial");
     await page.locator("#hs-q").fill(String(sale.id));
     await page.getByRole("button", { name: "Buscar", exact: true }).click();
-    await page.getByRole("button", { name: `Ver venta ${sale.id}` }).click();
+    // exact: until the folio filter answers, the whole list of twelve sales is still on screen and "Ver venta 1" is also a prefix of 10, 11 and 12
+    await page.getByRole("button", { name: `Ver venta ${sale.id}`, exact: true }).click();
     const dlg = page.getByRole("dialog");
     await dlg.getByText(`Venta #${sale.id}`).first().waitFor();
     await dlg.getByText(/Shampoo Hidratante/).first().waitFor();

@@ -294,7 +294,12 @@ export const ui = {
    * quantity stays 1 (seen in a probe: the 'input' event of "2" had type=text). The application's own signal is that focus return, so wait for it.
    */
   async setCartQuantity(page, qty) {
-    await page.waitForFunction(() => document.activeElement && document.activeElement.id === "pos-search", null, { timeout: 8000 });
+    // polled with evaluate (a CDP call): waitForFunction evaluates a string, which the packaged page's CSP (no unsafe-eval) refuses
+    const until = Date.now() + 8000;
+    while (!(await page.evaluate(() => !!document.activeElement && document.activeElement.id === "pos-search"))) {
+      if (Date.now() > until) throw new Error("the search box never got the focus back after adding the product");
+      await page.waitForTimeout(20);
+    }
     await page.locator('input[type="number"]').first().fill(String(qty));
   },
   /** Real UI sale. `query` is typed in the search box and the product row is clicked. */
