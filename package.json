@@ -43,7 +43,7 @@
     "test:setup": "node e2e/run.mjs setup",
     "test:pilot": "node e2e/run.mjs pilot",
     "test:migrations": "node e2e/migrations.mjs",
-    "test:all": "npm run test:unit && node e2e/run.mjs all && node e2e/migrations.mjs && node e2e/ops.mjs && npm run test:legacy",
+    "test:all": "npm run test:unit && node e2e/run.mjs all && node e2e/migrations.mjs && node e2e/ops.mjs && npm run test:legacy && npm run test:installer",
     "package:dir": "npm run build && electron-builder --win dir",
     "test:packaged": "node e2e/packaged.mjs",
     "test:demo": "node e2e/demo.mjs",
@@ -52,7 +52,9 @@
     "db:restore": "node ./scripts/db-restore.mjs",
     "db:roles": "node ./scripts/db-roles.mjs",
     "test:ops": "node e2e/ops.mjs",
-    "test:legacy": "node --experimental-strip-types e2e/legacy.mjs"
+    "test:legacy": "node --experimental-strip-types e2e/legacy.mjs",
+    "fetch:postgres": "node scripts/fetch-postgres.mjs",
+    "test:installer": "node scripts/fetch-postgres.mjs && node --experimental-strip-types --disable-warning=ExperimentalWarning e2e/installer.mjs"
   },
   "build": {
     "appId": "com.beauty.pos",
