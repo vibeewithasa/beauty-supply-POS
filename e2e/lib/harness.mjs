@@ -288,12 +288,26 @@ export const ui = {
     const el = [...document.querySelectorAll("p")].find((p) => p.textContent.trim() === l);
     return el && el.nextElementSibling ? el.nextElementSibling.textContent.trim() : null;
   }, label),
+  /**
+   * Types the quantity of the first cart line. Adding a product makes the application hand the focus back to the search box a tick later
+   * (focusSearch, setTimeout 0): a fill that focuses the quantity box inside that tick has its text inserted into the SEARCH box and the
+   * quantity stays 1 (seen in a probe: the 'input' event of "2" had type=text). The application's own signal is that focus return, so wait for it.
+   */
+  async setCartQuantity(page, qty) {
+    // polled with evaluate (a CDP call): waitForFunction evaluates a string, which the packaged page's CSP (no unsafe-eval) refuses
+    const until = Date.now() + 8000;
+    while (!(await page.evaluate(() => !!document.activeElement && document.activeElement.id === "pos-search"))) {
+      if (Date.now() > until) throw new Error("the search box never got the focus back after adding the product");
+      await page.waitForTimeout(20);
+    }
+    await page.locator('input[type="number"]').first().fill(String(qty));
+  },
   /** Real UI sale. `query` is typed in the search box and the product row is clicked. */
   async sell(page, { query, name, qty = 1, method }) {
     await ui.nav(page, "Vender");
     await page.getByPlaceholder("Código, SKU o nombre...").fill(query);
     await page.getByRole("option", { name: new RegExp(name) }).first().click();
-    if (qty > 1) await page.locator('input[type="number"]').first().fill(String(qty));
+    if (qty > 1) await ui.setCartQuantity(page, qty);
     await page.getByRole("button", { name: "Pagar" }).click();
     const dlg = page.getByRole("dialog");
     await dlg.getByRole("tab", { name: method === "cash" ? "Efectivo" : "Tarjeta" }).click();

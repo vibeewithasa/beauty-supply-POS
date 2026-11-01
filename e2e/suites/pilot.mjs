@@ -616,7 +616,7 @@ export async function run(c) {
       const n0 = (await one("select count(*)::int n from sales")).n;
       await P().getByPlaceholder("Código, SKU o nombre...").fill(PRODUCTS[3].sku);
       await P().getByRole("option", { name: new RegExp(PRODUCTS[3].name) }).first().click();
-      await P().locator('input[type="number"]').first().fill("99");
+      await ui.setCartQuantity(P(), 99);
       // the screen refuses more than the stock and says how many there are; the quantity does not jump to 99
       await P().getByText("Solo hay 12 unidades disponibles").first().waitFor({ timeout: 8000 });
       expect(num(await P().locator('input[type="number"]').first().inputValue()) <= 12, "the cart quantity stays within the stock");

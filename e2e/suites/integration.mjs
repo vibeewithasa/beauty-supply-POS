@@ -434,7 +434,7 @@ export async function run(c) {
     await ui.nav(page, "Vender");
     await page.getByPlaceholder("Código, SKU o nombre...").fill(p.sku);
     await page.getByRole("option", { name: new RegExp(p.name) }).first().click();
-    await page.locator('input[type="number"]').first().fill("3");
+    await ui.setCartQuantity(page, 3);
     // someone else sells/removes stock while this cart is open
     await db.query("update products set stock=1 where id=$1", [p.id]);
     await page.getByRole("button", { name: "Pagar" }).click();

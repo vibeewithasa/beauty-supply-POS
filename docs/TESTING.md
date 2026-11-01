@@ -90,3 +90,13 @@ registered) when migrations are missing, the database is empty, or it comes from
 3. `npm run db:migrate -- --apply --confirm-database=<name>`.
 
 The E2E runners create and migrate their own throwaway database (`beauty_pos_e2e_<id>`) and never touch another one.
+
+## Writing tests that do not race the screen (lessons of the 0.8.0 verification)
+
+Intermittent failures of `npm run test:all` were traced to three test-side races, each reproduced before it was fixed (none was a product defect):
+
+* **Waiting on something already on screen.** A result box or list from the previous step is still visible while the next action is saved, so waiting for "any result" returns immediately (SCR-12: the wait returned in 22 ms). Wait for a state only THIS action produces (`Ya devuelto completo`), then read PostgreSQL. In a list that may still be unfiltered, open a row by its exact name (`exact: true`: `Ver venta 1` is a prefix of 10, 11, 12).
+* **Typing while the application moves the focus.** After a product is added the sales screen returns the focus to the search box a tick later (`focusSearch`); a quantity typed inside that tick lands in the search box (a 150-sale probe lost 6 quantities, the `input` event of the lost value had `type=text`). Use `ui.setCartQuantity`, which waits for that focus return.
+* **`waitForFunction` in the packaged page.** It evaluates a string, which the packaged CSP refuses; poll with `page.evaluate` instead.
+
+Not causes (tested): saturating all 16 cores, covering the test window with an opaque window, a re-optimization of Vite's dependencies, leftover processes or ports.

@@ -244,9 +244,10 @@ export async function run(c) {
     expect((await one("select count(*)::int n from returns")).n === n0, "no return was created");
     await qty.fill("2");
     await page.getByRole("button", { name: /Registrar la devolución sin reembolso/ }).click();
-    await page.getByTestId("return-result").waitFor();
-    expect((await one("select coalesce(sum(quantity),0)::int q from return_items ri join returns r on r.id=ri.return_id where r.sale_id=$1", [saleId])).q === 3, "all 3 units returned in total");
+    // The result box of the previous return (SCR-11) is still on screen while this one is being saved, so waiting for it proves nothing: wait for the
+    // state that only exists once THIS return is stored and the sale was re-read ("Ya devuelto completo"), then check PostgreSQL.
     await page.getByText("Ya devuelto completo").waitFor();
+    expect((await one("select coalesce(sum(quantity),0)::int q from return_items ri join returns r on r.id=ri.return_id where r.sale_id=$1", [saleId])).q === 3, "all 3 units returned in total");
     expect((await one("select stock from products where id=$1", [ret.id])).stock === 20, "stock fully restored");
   });
   await test("SCR-13.unknown_or_invalid_sale_numbers_show_a_clear_error", "e2e", async () => {
