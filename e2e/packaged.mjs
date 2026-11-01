@@ -275,9 +275,17 @@ try {
     // cwd is the project root, which has a real .env: a packaged app must ignore it
     const l = await launch(appEnv({}, false), { userDataDir: ud });
     try {
-      await l.page.getByRole("heading", { name: "Falta la configuración de la base de datos" }).waitFor({ timeout: 15000 });
-      expect(await l.page.evaluate(() => typeof window.api) === "undefined", "the window has no application preload/IPC (only the four setup calls)");
-      expect(await l.page.evaluate(() => Object.keys(window.setupApi || {}).sort().join()) === "createAdmin,getState,inspect,save", "the first-run setup window is shown");
+      // 0.8.0: nothing configured + the package carries PostgreSQL -> the first-installation wizard (the .env of the working folder is ignored)
+      await l.page.getByRole("heading", { name: "Bienvenido a Estética Leal POS" }).waitFor({ timeout: 15000 });
+      expect(await l.page.evaluate(() => typeof window.api) === "undefined", "the window has no application preload/IPC (only the wizard calls)");
+      expect(await l.page.evaluate(() => Object.keys(window.installApi || {}).sort().join()) === "advanced,getState,onStep,run", "the first-installation wizard is shown");
+      expect(!fs.existsSync(path.join(ud, "config.json")) && !fs.existsSync(path.join(ud, "managed")), "nothing is created before the person decides");
+      // and the explicit "PostgreSQL that I already have" path opens the original setup window with its four calls
+      const opened = l.app.waitForEvent("window", { timeout: 15000 });
+      await l.page.locator("#btn-advanced").click();
+      const setup = await opened;
+      await setup.getByRole("heading", { name: "Conexión a un PostgreSQL existente" }).waitFor({ timeout: 15000 });
+      expect(await setup.evaluate(() => Object.keys(window.setupApi || {}).sort().join()) === "createAdmin,getState,inspect,save", "the connection setup window is shown");
       expect(!l.mainLog.some((x) => containsSecret(x)), "no secret in the main log");
     } finally { await close(l); fs.rmSync(ud, { recursive: true, force: true }); }
   });
@@ -365,16 +373,20 @@ try {
     const ud = fs.mkdtempSync(path.join(os.tmpdir(), "pos-packaged-setup-"));
     const l = await launch(appEnv({}, false), { userDataDir: ud });
     try {
-      await l.page.locator("#btn-test").waitFor({ timeout: 15000 });
+      await l.page.locator("#btn-advanced").waitFor({ timeout: 15000 });
+      const opened = l.app.waitForEvent("window", { timeout: 15000 });
+      await l.page.locator("#btn-advanced").click();
+      const sp = await opened;
+      await sp.locator("#btn-test").waitFor({ timeout: 15000 });
       const server = new URL(urlFor(runDb));
-      await l.page.locator("#host").fill(server.hostname);
-      await l.page.locator("#port").fill(server.port || "5432");
-      await l.page.locator("#database").fill(runDb);
-      await l.page.locator("#user").fill(role);
-      await l.page.locator("#password").fill(pw);
-      await l.page.locator("#btn-test").click();
-      await l.page.getByText(/Esquema al día: \d+ de \d+ migraciones/).waitFor({ timeout: 15000 });
-      const t = await l.page.locator("#checks").innerText();
+      await sp.locator("#host").fill(server.hostname);
+      await sp.locator("#port").fill(server.port || "5432");
+      await sp.locator("#database").fill(runDb);
+      await sp.locator("#user").fill(role);
+      await sp.locator("#password").fill(pw);
+      await sp.locator("#btn-test").click();
+      await sp.getByText(/Esquema al día: \d+ de \d+ migraciones/).waitFor({ timeout: 15000 });
+      const t = await sp.locator("#checks").innerText();
       expect(/privilegios mínimos/.test(t) && /Ya existe un administrador/.test(t), "the report names the role privileges and the administrator: " + t.replace(/\s+/g, " "));
       expect(!fs.existsSync(path.join(ud, "config.json")), "nothing is saved until the operator saves (and this test never saves: the package would relaunch itself)");
       expect(!l.mainLog.some((x) => x.includes(pw) || containsSecret(x)), "no secret in the main log");

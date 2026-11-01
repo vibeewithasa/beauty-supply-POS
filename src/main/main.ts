@@ -3,6 +3,8 @@ import path from "path";
 import { resolveDevOrigin } from "../backend/dev-origin";
 import { isTrustedUrl } from "../backend/sender-guard";
 import { showSetupWindow } from "./setup-window";
+import { configFilePath } from "../backend/config-path";
+import { readConfigFile } from "../backend/config-store";
 
 // NOTE: nothing that opens the database (db.ts, auth, ipc, startup-check) is imported statically: the connection string may be
 // protected by Windows (safeStorage), which only works after the app is ready. They are imported inside the ready handler.
@@ -14,6 +16,7 @@ const trustedUrl = (url: string) =>
     appIndexPath: path.join(app.getAppPath(), "dist", "renderer", "index.html"),
   });
 let mainWindow: BrowserWindow | null = null;
+let stopManagedInstance: (() => void) | null = null;
 
 // Ensure single instance: a second launch focuses the existing window instead of opening another one.
 if (!app.requestSingleInstanceLock()) {
@@ -115,6 +118,35 @@ app.on("ready", async () => {
     return;
   }
 
+  // The dedicated PostgreSQL of this installation (docs/SELF_CONTAINED_INSTALLER.md) must be running BEFORE the configuration is read.
+  // A DATABASE_URL in the environment is the operator's own and bypasses all of this; a development build only joins in when it uses config.json.
+  if (!process.env.DATABASE_URL && (app.isPackaged || process.env.POS_USE_CONFIG_FILE === "1")) {
+    const managed = await import("./managed-instance");
+    const state = managed.managedState();
+    if (state.kind === "damaged") {
+      showStartupFailure("No se pudo abrir la instalación", state.reason);
+      return;
+    }
+    if (state.kind === "ready") {
+      const started = await managed.startManagedInstance();
+      if (!started.ok) {
+        showStartupFailure(started.headline, started.detail);
+        return;
+      }
+      stopManagedInstance = managed.stopManagedInstanceIfOurs;
+    } else if (
+      (app.isPackaged || process.env.POS_FORCE_INSTALL_WIZARD === "1") && // a development build keeps the connection setup window unless asked
+      managed.bundleAvailable() &&
+      (state.kind === "incomplete" || readConfigFile(configFilePath()).kind === "none")
+    ) {
+      // nothing configured (or an installation that did not finish): the first-installation wizard. An existing config.json (0.7.0, or a
+      // PostgreSQL the operator configured) is never replaced: it goes the regular way below.
+      const { showInstallWizard } = await import("./install-wizard");
+      showInstallWizard();
+      return;
+    }
+  }
+
   const { dbConfig } = await import("../backend/db");
 
   if (!dbConfig.ok) {
@@ -149,6 +181,12 @@ app.on("ready", async () => {
   console.log("Ventana creada.");
 
   void maybeCheckForUpdates();
+});
+
+// closing the application shuts the dedicated PostgreSQL down cleanly (no postgres.exe left running, nothing locked for an update or uninstall)
+app.on("before-quit", () => {
+  stopManagedInstance?.();
+  stopManagedInstance = null;
 });
 
 app.on("window-all-closed", () => {

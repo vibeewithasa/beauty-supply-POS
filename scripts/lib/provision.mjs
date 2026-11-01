@@ -107,7 +107,7 @@ async function cleanLeftovers(layout, previous, log) {
  * Installs the dedicated instance. `persist({ connection, adminPassword })` must store the connection (protected by Windows) and the
  * superuser password; if it throws, the whole installation is undone. Resolves with { layout, manifest, connection, summary }.
  */
-export async function provisionManagedInstance({ root, bundleDir, migrationsDir, mode, input, appVersion = "0.0.0", onStep = () => {}, persist, minFreeBytes, portFirst = PORT_FIRST, portLast = PORT_LAST }) {
+export async function provisionManagedInstance({ root, bundleDir, migrationsDir, mode, input, appVersion = "0.0.0", onStep = () => {}, persist, unpersist = async () => {}, minFreeBytes, portFirst = PORT_FIRST, portLast = PORT_LAST }) {
   validateInputs(mode, input);
   const layout = layoutFor(root);
   const adminPassword = randomSecret(24);
@@ -194,7 +194,7 @@ export async function provisionManagedInstance({ root, bundleDir, migrationsDir,
 
     const connection = { host: "127.0.0.1", port, database: built.database, user: built.role, password: runtimePassword };
     await step("config", "Guardando la configuración protegida", async () => {
-      undo.push(async () => fs.rmSync(layout.adminSecret, { force: true }));
+      undo.push(async () => { fs.rmSync(layout.adminSecret, { force: true }); await unpersist(); });
       await persist({ connection, adminPassword });
       mark("config");
     });

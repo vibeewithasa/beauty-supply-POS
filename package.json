@@ -1,6 +1,6 @@
 {
   "name": "beauty-supply-pos",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "private": true,
   "main": "dist/main/main.cjs",
   "type": "module",
@@ -12,10 +12,10 @@
     "dev:preload": "tsup src/preload/preload.ts --format cjs --out-dir dist/preload --target node18 --watch --external electron",
     "dev:renderer": "vite",
     "electron": "wait-on tcp:5173 && electron .",
-    "build": "tsup src/main/main.ts --format cjs --out-dir dist/main --target node18 --external electron,electron-updater && tsup src/preload/preload.ts src/preload/setup-preload.ts --format cjs --out-dir dist/preload --target node18 --external electron && tsup scripts/demo-setup.mjs --format cjs --out-dir dist/tools --target node18 --shims && vite build",
+    "build": "tsup src/main/main.ts --format cjs --out-dir dist/main --target node18 --external electron,electron-updater && tsup src/preload/preload.ts src/preload/setup-preload.ts src/preload/install-preload.ts --format cjs --out-dir dist/preload --target node18 --external electron && tsup scripts/demo-setup.mjs --format cjs --out-dir dist/tools --target node18 --shims && vite build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint .",
-    "package": "npm run build && electron-builder --win",
+    "package": "npm run fetch:postgres && npm run build && electron-builder --win",
     "db:generate": "drizzle-kit generate",
     "db:check": "drizzle-kit check",
     "db:migrate": "node ./scripts/db-migrate.mjs",
@@ -44,7 +44,7 @@
     "test:pilot": "node e2e/run.mjs pilot",
     "test:migrations": "node e2e/migrations.mjs",
     "test:all": "npm run test:unit && node e2e/run.mjs all && node e2e/migrations.mjs && node e2e/ops.mjs && npm run test:legacy && npm run test:installer",
-    "package:dir": "npm run build && electron-builder --win dir",
+    "package:dir": "npm run fetch:postgres && npm run build && electron-builder --win dir",
     "test:packaged": "node e2e/packaged.mjs",
     "test:demo": "node e2e/demo.mjs",
     "db:status": "node ./scripts/db-status.mjs",
@@ -54,7 +54,8 @@
     "test:ops": "node e2e/ops.mjs",
     "test:legacy": "node --experimental-strip-types e2e/legacy.mjs",
     "fetch:postgres": "node scripts/fetch-postgres.mjs",
-    "test:installer": "node scripts/fetch-postgres.mjs && node --experimental-strip-types --disable-warning=ExperimentalWarning e2e/installer.mjs"
+    "test:installer": "node scripts/fetch-postgres.mjs && node --experimental-strip-types --disable-warning=ExperimentalWarning e2e/installer.mjs",
+    "test:installer-app": "node --experimental-strip-types --disable-warning=ExperimentalWarning e2e/installer-app.mjs"
   },
   "build": {
     "appId": "com.beauty.pos",
@@ -79,6 +80,10 @@
           "Preparar-Base-Demo.ps1",
           "LEEME.txt"
         ]
+      },
+      {
+        "from": "vendor/pg-bundle",
+        "to": "postgresql"
       }
     ],
     "win": {
@@ -102,7 +107,8 @@
       "uninstallDisplayName": "Estética Leal POS (Beauty POS)",
       "deleteAppDataOnUninstall": false,
       "runAfterFinish": true
-    }
+    },
+    "artifactName": "Estética Leal POS Setup ${version}.${ext}"
   },
   "dependencies": {
     "@electron/remote": "^2.1.2",

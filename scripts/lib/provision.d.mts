@@ -16,6 +16,8 @@ export function provisionManagedInstance(o: {
   appVersion?: string;
   onStep?: (s: StepEvent) => void;
   persist: (o: { connection: Connection; adminPassword: string }) => Promise<void>;
+  /** undoes what `persist` stored when a later step fails */
+  unpersist?: () => Promise<void>;
   minFreeBytes?: number;
   portFirst?: number;
   portLast?: number;
