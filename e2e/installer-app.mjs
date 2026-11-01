@@ -280,6 +280,52 @@ try {
     expect(out === "", "no connection to anything outside this computer: " + out);
   });
 
+  // ------------------------------------------------------------------------------------------------ maintenance window
+  const NEW_ADMIN = randomPin();
+  let NEW_VENDOR = randomPin();
+  while (NEW_VENDOR === NEW_ADMIN) NEW_VENDOR = randomPin();
+  await test("APP-10b.maintenance_window_shows_the_state_makes_a_verified_backup_and_resets_the_demonstration_only_with_the_word_and_a_backup", "e2e", async () => {
+    await db.end().catch(() => {});
+    await closeApp(L);
+    L = await launchInstalled(userData, ["--manage"]);
+    page = L.page;
+    await page.getByText("Demostración", { exact: true }).waitFor({ timeout: 60000 });
+    const state = (await page.locator("#state").innerText()).replace(/\s+/g, " ");
+    expect(/beauty_pos_demo/.test(state) && /al día \(\d+ de \d+\)/.test(state) && /127\.0\.0\.1|Puerto/.test(state), "state shown: " + state);
+    expect(await page.evaluate(() => typeof window.api) === "undefined" && await page.evaluate(() => Object.keys(window.manageApi).sort().join()) === "backup,getState,onStep,resetDemo,updateSchema", "only the maintenance calls exist");
+    expect(await page.locator("#btn-update").isDisabled(), "nothing to update on an up-to-date schema");
+    await page.locator("#btn-backup").click();
+    await page.getByText(/Respaldo verificado: beauty_pos_demo_manual_/).waitFor({ timeout: 60000 });
+    const backups = path.join(userData, "managed", "backups");
+    const dumps = fs.readdirSync(backups).filter((f) => f.endsWith(".dump"));
+    expect(dumps.length === 1 && fs.existsSync(path.join(backups, dumps[0].replace(/\.dump$/, ".summary.json"))), "backup and its summary on disk");
+    // reset: wrong word -> nothing happens
+    for (const [id, v] of [["#admin-pin", NEW_ADMIN], ["#admin-pin2", NEW_ADMIN], ["#vendor-pin", NEW_VENDOR], ["#vendor-pin2", NEW_VENDOR], ["#confirm", "si"]]) await page.locator(id).fill(v);
+    await page.locator("#btn-reset").click();
+    await page.locator("#msg.err").waitFor({ timeout: 30000 });
+    expect(/REINICIAR/.test(await page.locator("#msg").innerText()), "the confirmation word is required: " + (await page.locator("#msg").innerText()));
+    expect(fs.readdirSync(backups).filter((f) => f.endsWith(".dump")).length === 1, "no extra backup was made by a refused reset");
+    for (const [id, v] of [["#admin-pin", NEW_ADMIN], ["#admin-pin2", NEW_ADMIN], ["#vendor-pin", NEW_VENDOR], ["#vendor-pin2", NEW_VENDOR], ["#confirm", "REINICIAR"]]) await page.locator(id).fill(v);
+    const exited = new Promise((resolve) => L.app.process().once("exit", resolve));
+    await page.locator("#btn-reset").click();
+    await page.getByText(/Demostración reiniciada. Respaldo previo: beauty_pos_demo_pre-reinicio-demo_/).waitFor({ timeout: 120000 });
+    await Promise.race([exited, sleep(15000)]);
+    expect(fs.readdirSync(backups).filter((f) => f.endsWith(".dump")).length === 2, "a backup was made before the reset");
+    expect(!L.mainLog.some((x) => x.includes(NEW_ADMIN) || x.includes(NEW_VENDOR) || x.includes(ADMIN_PIN) || containsSecret(x)), "no PIN or password in the log");
+    expect(await waitFor(async () => processesFrom(path.join(userData, "managed"), "postgres.exe") === 0, 30000), "PostgreSQL stopped with the window");
+    L = await launchInstalled(userData);
+    page = L.page;
+    await page.getByText("Ingresa tu PIN para comenzar").waitFor({ timeout: 60000 });
+    const s = await secretsFrom(L, userData);
+    db = new pg.Client({ connectionString: connectionUrl({ port: s.cfg.port, user: "pos_cluster_admin", password: s.adminPassword, database: "beauty_pos_demo" }) });
+    await db.connect();
+    expect((await db.query("select count(*)::int n from sales")).rows[0].n === T.sales, "back to the fresh demonstration's twelve sales");
+    const u = (await db.query("select role, pin_hash from users order by role")).rows;
+    expect(verifyModern(NEW_ADMIN, u[0].pin_hash) && verifyModern(NEW_VENDOR, u[1].pin_hash) && !verifyModern(ADMIN_PIN, u[0].pin_hash), "the new PINs work, the old ones do not");
+    await ui.login(page, NEW_ADMIN);
+    await page.waitForURL(/#\/dashboard$/, { timeout: 15000 });
+  });
+
   // ------------------------------------------------------------------------------------------------ a failing installation and its retry (UI)
   await test("APP-11.a_tampered_postgresql_package_makes_the_wizard_fail_safely_name_the_step_and_a_retry_works", "security", async () => {
     await db.end().catch(() => {});
@@ -332,6 +378,11 @@ try {
     expect(await page.getByRole("row", { name: /DEMO-/ }).count() === 0, "no fictional product on screen");
     const wrong = await ipc(page, "api.users.getAll()");
     expect(wrong.ok === true && wrong.v.length === 1 && wrong.v[0].name === "Persona Administradora", "the administrator is the only user");
+    await closeApp(L);
+    L = await launchInstalled(userData2, ["--manage"]);
+    page = L.page;
+    await page.getByText("Instalación limpia", { exact: true }).waitFor({ timeout: 60000 });
+    expect(await page.locator("#demo-reset").isHidden(), "a clean installation offers no demonstration reset");
     await closeApp(L);
     expect(await waitFor(async () => processesFrom(path.join(userData2, "managed"), "postgres.exe") === 0, 30000), "PostgreSQL stopped with the application");
   });

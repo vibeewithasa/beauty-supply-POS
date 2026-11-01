@@ -118,6 +118,24 @@ app.on("ready", async () => {
     return;
   }
 
+  // "Beauty POS.exe --manage": maintenance of the dedicated instance (backup, schema update, demonstration reset). The regular application is not started.
+  if (process.argv.includes("--manage") && !process.env.DATABASE_URL) {
+    const managed = await import("./managed-instance");
+    if (managed.managedState().kind !== "ready") {
+      showStartupFailure("No hay una instalación administrada", "Esta cuenta de Windows no tiene una instalación terminada de la base de datos propia de Estética Leal POS.");
+      return;
+    }
+    const started = await managed.startManagedInstance();
+    if (!started.ok) {
+      showStartupFailure(started.headline, started.detail);
+      return;
+    }
+    stopManagedInstance = managed.stopManagedInstanceIfOurs;
+    const { showManageWindow } = await import("./manage-window");
+    showManageWindow();
+    return;
+  }
+
   // The dedicated PostgreSQL of this installation (docs/SELF_CONTAINED_INSTALLER.md) must be running BEFORE the configuration is read.
   // A DATABASE_URL in the environment is the operator's own and bypasses all of this; a development build only joins in when it uses config.json.
   if (!process.env.DATABASE_URL && (app.isPackaged || process.env.POS_USE_CONFIG_FILE === "1")) {

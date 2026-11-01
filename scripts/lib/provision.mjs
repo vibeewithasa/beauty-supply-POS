@@ -313,3 +313,24 @@ export async function resetDemo({ root, adminPassword, confirm, input, migration
 }
 
 export { clusterRunning, stopCluster, startCluster, systemIdentifier };
+
+/** What the maintenance window shows. Read only. */
+export async function managedStatus({ root, adminPassword, migrationsDir }) {
+  const m = await runningAdmin(root, adminPassword);
+  const db = m.manifest.database.name;
+  const schema = await schemaStatus(m.url(db), migrationsDir);
+  let backups = [];
+  try {
+    backups = fs.readdirSync(m.layout.backups).filter((f) => f.endsWith(".dump")).sort().reverse();
+  } catch { /* no backups yet */ }
+  return {
+    mode: m.manifest.database.mode,
+    database: db,
+    port: m.port,
+    postgresVersion: m.manifest.postgres.version,
+    installedAt: m.manifest.createdAt,
+    schema: { status: schema.status, applied: schema.applied, required: schema.required },
+    backups: { folder: m.layout.backups, count: backups.length, latest: backups[0] ?? null },
+    dataFolder: m.layout.data,
+  };
+}

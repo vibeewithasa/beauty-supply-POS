@@ -12,7 +12,7 @@
     "dev:preload": "tsup src/preload/preload.ts --format cjs --out-dir dist/preload --target node18 --watch --external electron",
     "dev:renderer": "vite",
     "electron": "wait-on tcp:5173 && electron .",
-    "build": "tsup src/main/main.ts --format cjs --out-dir dist/main --target node18 --external electron,electron-updater && tsup src/preload/preload.ts src/preload/setup-preload.ts src/preload/install-preload.ts --format cjs --out-dir dist/preload --target node18 --external electron && tsup scripts/demo-setup.mjs --format cjs --out-dir dist/tools --target node18 --shims && vite build",
+    "build": "tsup src/main/main.ts --format cjs --out-dir dist/main --target node18 --external electron,electron-updater && tsup src/preload/preload.ts src/preload/setup-preload.ts src/preload/install-preload.ts src/preload/manage-preload.ts --format cjs --out-dir dist/preload --target node18 --external electron && tsup scripts/demo-setup.mjs --format cjs --out-dir dist/tools --target node18 --shims && vite build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint .",
     "package": "npm run fetch:postgres && npm run build && electron-builder --win",
@@ -78,7 +78,8 @@
         "filter": [
           "Preparar-Base-Demo.cmd",
           "Preparar-Base-Demo.ps1",
-          "LEEME.txt"
+          "LEEME.txt",
+          "Mantenimiento.cmd"
         ]
       },
       {

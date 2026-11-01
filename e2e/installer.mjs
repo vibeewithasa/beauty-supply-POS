@@ -18,7 +18,7 @@ import {
   auditAcl, auditClusterConfig, clusterRunning, currentUserSid, detectForeignPostgres, ensureRunning, layoutFor, preflight, readManifest, readConfiguredPort, adminUrl,
   stopCluster, verifyOwnership, verifyTree, readBundleManifest, installRuntime, isPortFree,
 } from "../scripts/lib/managed-pg.mjs";
-import { backupManaged, loadManaged, provisionManagedInstance, resetDemo, updateSchema } from "../scripts/lib/provision.mjs";
+import { backupManaged, loadManaged, managedStatus, provisionManagedInstance, resetDemo, updateSchema } from "../scripts/lib/provision.mjs";
 
 const BUNDLE = path.join(ROOT, "vendor", "pg-bundle");
 const MIGRATIONS = path.join(ROOT, "drizzle");
@@ -509,6 +509,14 @@ try {
     expect(newConn.user === "pos_demo_runtime" && newConn.password, "new runtime credential handed to the caller");
     expect((await q(dbUrl(), "select count(*)::int n from sales"))[0].n === 12, "same 12 sales as a fresh demonstration");
     cleanupRoot(root);
+  });
+
+  await test("INST-24b.the_maintenance_status_reads_mode_schema_and_backups_without_changing_anything", "integration", async () => {
+    const s = await managedStatus({ root: demoRoot, adminPassword: adminPwdOf.get(demoRoot), migrationsDir: MIGRATIONS });
+    expect(s.mode === "demo" && s.database === "beauty_pos_demo" && s.schema.status === "ok" && s.schema.applied === s.schema.required, "demo status: " + JSON.stringify(s.schema));
+    expect(s.backups.count >= 1 && /\.dump$/.test(s.backups.latest), "sees the backup made earlier: " + s.backups.latest);
+    const c = await managedStatus({ root: cleanRoot, adminPassword: adminPwdOf.get(cleanRoot), migrationsDir: MIGRATIONS });
+    expect(c.mode === "clean" && c.backups.count === 0, "clean status has no backups yet");
   });
 
   // ------------------------------------------------------------------------------------------------ uninstall / reinstall

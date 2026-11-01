@@ -34,3 +34,13 @@ export function resetDemo(o: {
   persist: (o: { connection: Connection; adminPassword: string }) => Promise<void>;
   onStep?: (s: StepEvent) => void;
 }): Promise<{ backup: string; summary: unknown }>;
+export function managedStatus(o: { root: string; adminPassword: string; migrationsDir: string }): Promise<{
+  mode: Mode;
+  database: string;
+  port: number;
+  postgresVersion: string;
+  installedAt: string;
+  schema: { status: string; applied: number; required: number };
+  backups: { folder: string; count: number; latest: string | null };
+  dataFolder: string;
+}>;
