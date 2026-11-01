@@ -125,8 +125,9 @@ Key source directories:
 
 ## Demonstration on a laptop
 
-`npm run package` builds a Windows installer (`release/`). `docs/DEMO_INSTALL_LAPTOP.md` explains how to install PostgreSQL and the installer on a laptop and create a database with
-fictional data; `docs/DEMO_CHECKLIST.md` is the presentation checklist. `npm run test:demo` rehearses the whole procedure without installing anything.
+`npm run package` builds a **self-contained** Windows installer (`release/Estética Leal POS Setup <version>.exe`): it carries a pinned official PostgreSQL and its first-start wizard prepares a dedicated,
+local-only database (demonstration or clean) with no manual PostgreSQL work. `docs/DEMO_INSTALL_LAPTOP.md` is the laptop guide, `docs/SELF_CONTAINED_INSTALLER.md` the architecture and `docs/DEMO_CHECKLIST.md`
+the presentation checklist. `npm run test:installer` and `npm run test:installer-app` rehearse it against a real PostgreSQL and the extracted installer without installing anything on the machine.
 
 ## Roadmap
 

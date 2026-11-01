@@ -3,27 +3,28 @@
 Para quien presenta. Las instrucciones de instalación están en `docs/DEMO_INSTALL_LAPTOP.md`.
 Marca cada punto; lo que dice **(manual)** no se pudo probar en la PC de desarrollo y debe hacerse una vez en la laptop real **antes** del día de la presentación.
 
-## A. Estado verificado (automático, `npm run test:demo` + resto de suites)
+## A. Estado verificado (automático)
 
-* El instalador contiene exactamente el paquete probado (mismo `app.asar` byte a byte), la herramienta de preparación de la base y sus archivos de ayuda; sin `.env`, sin
-  contraseñas, sin PIN ni hashes de PIN (los PIN se eligen al preparar la base).
-* La preparación de la base con la herramienta incluida (PowerShell + el propio programa como motor, sin Node.js) crea una base nueva, un usuario de PostgreSQL de privilegios
-  mínimos y los datos ficticios; los importes cuadran al centavo con la definición del conjunto de datos; rechaza datos inválidos y nombres de bases existentes sin dejar residuos.
-* La aplicación extraída del instalador, sin repositorio, sin `.env`, sin Node.js en el PATH y sin `npm run dev`: abre la ventana de configuración, la configura, se reinicia sola,
-  muestra la identidad **Estética Leal** y recorre: tablero, reportes con el rango de la demostración, productos, stock, historial, ticket, historial de cajas (con el faltante de $5.00),
-  apertura de caja, venta con tarjeta por código de barras, venta en efectivo por nombre, devolución autorizada con PIN de administrador, pago de la devolución pendiente, cierre de caja,
-  reinicio con los datos intactos y vista restringida del vendedor.
+Con `npm run test:installer` (29), `npm run test:installer-app` (14), `npm run test:demo` (14) y `npm run test:packaged` (16):
+
+* El instalador contiene el paquete probado (mismo `app.asar` byte a byte), el PostgreSQL fijado por hash (1 029 archivos, cada uno comprobado) y sin `.env`, contraseñas, PIN, datos de usuario ni
+  archivos de una instalación (`config.json`, `installation.json`, `cluster-admin.json`, `pg_hba.conf`…).
+* La aplicación extraída del instalador, sin repositorio, sin `.env`, sin Node.js en el PATH, sin `DATABASE_URL`, sin PostgreSQL instalado para ella: muestra el **asistente**, valida los PIN, crea la base propia
+  (PostgreSQL real en una carpeta temporal, escuchando solo en 127.0.0.1, SCRAM, permisos restringidos), guarda las dos contraseñas protegidas con Windows, se reinicia sola y entra con los PIN elegidos.
+* Sobre esa base se recorre la presentación completa: historial, ticket, reportes, productos, cajas con faltante de $5.00, apertura de caja, venta con tarjeta por código de barras y en efectivo por nombre,
+  devolución autorizada con PIN de administrador, pago de la devolución pendiente, cierre de caja que concilia al centavo, cierre y reapertura (PostgreSQL se detiene y vuelve a arrancar con los datos intactos) y vista restringida del vendedor.
+* Instalación limpia (un administrador, sin datos ficticios), reinicio de la demostración con respaldo previo y palabra de confirmación, respaldo y restauración, actualización de estructura con respaldo, actualización de PostgreSQL de versión
+  menor, apagado brusco con recuperación, puerto ocupado, espacio insuficiente, paquete alterado, instalación fallida con deshacer seguro y reintento, reinstalación sin duplicar nada, y una configuración 0.7.0 / PostgreSQL externo que nunca dispara el asistente.
+* La PC de desarrollo no se tocó: ni su PostgreSQL (se comparó la lista de bases y roles antes y después, y su hora de arranque) ni servicios de Windows.
 
 ## B. Antes de salir (en casa)
 
 - [ ] Laptop con Windows actualizado y cargador; batería al 100 %.
-- [ ] PostgreSQL instalado, contraseña del superusuario anotada en un lugar privado (no en el proyecto).
-- [ ] Aplicación instalada y configurada con la base `beauty_pos_demo` (guía, pasos 1-4).
-- [ ] PIN del Administrador Demo y del Vendedor Demo anotados en un lugar privado.
-- [ ] Probado el apartado 5 de la guía (reiniciar la demostración) una vez, para saber cuánto tarda (unos segundos).
-- [ ] Reiniciar la demostración **justo antes de salir** para que las ventas de ensayo no queden mezcladas.
+- [ ] Instalador copiado y su SHA-256 comprobado (guía, paso 1). Copia extra del instalador en una memoria USB.
+- [ ] Aplicación instalada y primer inicio hecho con la modalidad **Demostración** (guía, pasos 2-3); PIN del Administrador Demo y del Vendedor Demo anotados en un lugar privado.
+- [ ] Probada una vez la ventana de Mantenimiento: *Crear respaldo ahora* y *Reiniciar la demostración* (guía, pasos 5-6), para saber cuánto tardan (unos segundos).
+- [ ] **Reiniciar la demostración justo antes de salir** para que las ventas de ensayo no queden mezcladas.
 - [ ] Si se mostrará con proyector o pantalla: resolución 1366x768 o mayor (la aplicación se revisó de 1024x768 a 1920x1080).
-- [ ] Copia del instalador en una memoria USB por si hay que reinstalar.
 
 ## C. Guion de la presentación (15-20 minutos)
 
@@ -46,19 +47,19 @@ Cosas que conviene decir con honestidad: el sistema es una versión de demostrac
 
 ## D. Pruebas manuales en la laptop real (no automatizables aquí)
 
-Orden recomendado, con el resultado esperado. Anotar fecha y resultado.
+Orden recomendado, con el resultado esperado. Anotar fecha y resultado. **Mientras estas pruebas no se hagan, el estado es "listo para integrar", no "listo para presentar autónomo".**
 
-1. **(manual) Instalación real con el `.exe`.** Doble clic → SmartScreen "Más información → Ejecutar de todas formas" → se instala sin pedir administrador → aparecen los accesos directos *Estética Leal POS* (escritorio y menú Inicio) → la aplicación abre con el icono "EL" y la ventana de configuración.
-2. **(manual) Desinstalación.** *Aplicaciones → Estética Leal POS (Beauty POS) → Desinstalar*: quita la aplicación y los accesos; la base y `%APPDATA%\Beauty POS` quedan (esperado). Reinstalar sobre lo anterior: la aplicación sigue conectada a la base sin reconfigurar.
-3. **(manual) Instalación de PostgreSQL** siguiendo la guía en una laptop limpia (opciones del instalador de EnterpriseDB, servicio iniciado, puerto 5432).
-4. **(manual) `Preparar-Base-Demo.cmd` con doble clic** (el ensayo automático ejecuta el mismo `.ps1` sin preguntas; la parte interactiva —campos ocultos de contraseña y PIN, repetir el PIN— solo se puede ver en una ventana real).
-   Probar un PIN de 5 dígitos, PIN distintos que no coinciden, y que al terminar la ventana muestra el usuario y la contraseña de la aplicación.
-5. **(manual) Primer arranque** con la ventana de configuración: probar conexión → guardar → reinicio automático → pantalla de PIN.
-6. **(manual) Reinicio de Windows**: abrir la aplicación sin tocar nada; el servicio de PostgreSQL debe haber arrancado solo y entrar con PIN.
-7. **(manual) Pantalla real de la laptop:** escala de pantalla (125 %/150 %) y resolución; que nada se corte en el módulo Vender y en el diálogo de pago. Si tiene pantalla táctil, teclado numérico táctil del PIN.
-8. **(manual, opcional) Impresora:** una impresión de ticket (80 mm o 58 mm) y de comprobante de devolución en la impresora que se vaya a usar; sin impresora, la vista previa funciona y la impresión se prueba en la siguiente etapa.
-9. **(manual, opcional) Lector de código de barras** (si hay uno): escanear un producto con código; los productos de la demostración tienen códigos internos (prefijo 20) que se pueden imprimir en una etiqueta de prueba.
-10. **(manual) Windows Defender / antivirus:** confirmar que no pone en cuarentena el instalador ni la aplicación (no está firmado). Si lo hace, añadir una excepción para la carpeta de instalación.
+1. **(manual) Instalación real con el `.exe`.** Doble clic → SmartScreen "Más información → Ejecutar de todas formas" → se instala sin pedir administrador → aparecen los accesos *Estética Leal POS* (escritorio y menú Inicio) → la aplicación abre con el icono "EL" y el asistente.
+2. **(manual) Asistente en un Windows limpio, sin PostgreSQL instalado:** modalidad Demostración, PIN distintos → pasos en verde → reinicio automático → pantalla de PIN. Anotar cuánto tarda y que no apareció ningún aviso del Firewall ni petición de administrador.
+3. **(manual) Equipo con otro PostgreSQL instalado (5432):** el asistente lo menciona, usa el puerto 55432 y no cambia nada del otro.
+4. **(manual) Reinicio de Windows:** abrir la aplicación sin tocar nada; la base arranca sola y se entra con el PIN. Probar también apagar Windows con la aplicación abierta (apagado sin cerrar) y volver a abrirla.
+5. **(manual) Desinstalación:** *Aplicaciones → Estética Leal POS (Beauty POS) → Desinstalar*: quita la aplicación y los accesos; `%LOCALAPPDATA%\Estetica Leal POS` y `%APPDATA%\Beauty POS` quedan (esperado). Reinstalar encima: entra sin asistente y con los datos.
+6. **(manual) Instalación limpia en otra cuenta de Windows o equipo:** un administrador, sin productos ni ventas; crear un vendedor desde *Usuarios*.
+7. **(manual) Mantenimiento:** *Crear respaldo ahora*, *Reiniciar la demostración* (PIN nuevos) y comprobar que se vuelve a entrar.
+8. **(manual) Pantalla real de la laptop:** escala de pantalla (125 %/150 %) y resolución; que nada se corte en el módulo Vender y en el diálogo de pago. Si tiene pantalla táctil, teclado numérico táctil del PIN.
+9. **(manual, opcional) Impresora:** una impresión de ticket (80 mm o 58 mm) y de comprobante de devolución en la impresora que se vaya a usar; sin impresora, la vista previa funciona.
+10. **(manual, opcional) Lector de código de barras:** escanear un producto con código; los de la demostración tienen códigos internos (prefijo 20).
+11. **(manual) Windows Defender / antivirus:** confirmar que no pone en cuarentena el instalador, la aplicación ni `postgres.exe` (no están firmados). Si lo hace, añadir una excepción para `%LOCALAPPDATA%\Estetica Leal POS` y la carpeta de la aplicación.
 
 ## E. Lo que NO es esta demostración (decirlo antes de que lo pregunten)
 
@@ -66,3 +67,4 @@ Orden recomendado, con el resultado esperado. Anotar fecha y resultado.
 * No incluye datos reales ni datos comerciales inventados de Estética Leal (logotipo, dirección, teléfono, RFC): el icono "EL" es provisional y esos datos los define el dueño en *Configuración*.
 * La impresión real, el lector y la terminal bancaria no se han probado con equipo físico.
 * No es la distribución comercial: faltan decisiones de producto pendientes (ver `docs/STATUS.md`).
+* La base de datos no es un servicio de Windows ni tiene respaldos programados: se enciende con la aplicación y los respaldos se hacen desde Mantenimiento.

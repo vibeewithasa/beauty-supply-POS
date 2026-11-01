@@ -1,115 +1,126 @@
-# Estética Leal POS: instalación de la demostración en una laptop con Windows
+# Estética Leal POS: instalación en una laptop con Windows (instalador autónomo 0.8.0)
 
-Esta guía deja la laptop lista para presentar el sistema con **datos ficticios**. No usa Node.js, VS Code, el repositorio ni `npm run dev`:
-solo PostgreSQL + el instalador. Está pensada para la laptop de la persona dueña del proyecto (instalación controlada), no es la distribución comercial.
+Un solo archivo, **`Estética Leal POS Setup 0.8.0.exe`**, deja la aplicación lista para usar o para presentar. **No hay que instalar PostgreSQL, ni Node.js, ni correr scripts.**
+Funciona sin Internet. Arquitectura y motivos: `docs/SELF_CONTAINED_INSTALLER.md`.
 
-Qué se verificó y qué no (detalle en `docs/DEMO_CHECKLIST.md`):
+## Qué se verificó y qué no (leer antes de la presentación)
 
-* Verificado de forma automática (`npm run test:demo`, 14 comprobaciones): el contenido del instalador, la preparación de la base con la herramienta incluida, la
-  ventana de configuración, el recorrido de la presentación con la aplicación extraída del instalador y sin ningún elemento del entorno de desarrollo.
-* **NO verificado en la PC de desarrollo:** ejecutar el instalador (`.exe`) y desinstalar. No hay un entorno desechable y no se instaló nada en la PC principal. Esas dos pruebas se hacen
-  la primera vez en la laptop (sección 6 del checklist).
+* **Verificado de forma automática en la PC de desarrollo** (`npm run test:installer`, `test:installer-app`, `test:demo`, `test:packaged`): el contenido del instalador (hash de sus 1 029 archivos de PostgreSQL),
+  el asistente de primera instalación manejado por la interfaz real, la creación de la base propia con PostgreSQL real, las dos modalidades (demostración y limpia), el reinicio tras apagado brusco,
+  las ventas/devoluciones/cajas sobre esa base, el respaldo y la restauración, la actualización, el reinicio de la demostración y el fallo seguro con reintento.
+* **NO verificado:** ejecutar el `.exe` con NSIS y desinstalar en un Windows limpio (no hay equipo desechable y no se instaló nada en la PC principal), el reinicio real de Windows, el
+  aviso del Firewall (no debería aparecer: solo se escucha en `127.0.0.1`), el antivirus, y la impresora/lector/terminal reales. Esas pruebas se hacen la primera vez en la laptop
+  (sección D de `docs/DEMO_CHECKLIST.md`). **Hasta entonces el sistema no debe declararse listo para presentar sin ensayo previo.**
 
 ## Qué necesitas
 
 | Cosa | Detalle |
 |---|---|
-| Laptop | Windows 10 u 11 de 64 bits con espacio libre para PostgreSQL (unos cientos de MB) y la aplicación (unos 400 MB instalada). |
-| Instalador | `Beauty POS Setup 0.7.0.exe` (unos 120 MB). Se genera con `npm run package` y se encuentra en `release\`. Cópialo con una memoria USB; no está en el repositorio ni en GitHub. |
-| PostgreSQL | Se instala en el paso 1 (instalador oficial gratuito). |
-| Contraseñas | La de PostgreSQL (la eliges en el paso 1) y dos PIN de 6 a 8 dígitos que eliges en el paso 3. **Nada de esto viene dentro del instalador.** |
+| Laptop | Windows 10 (1809 o superior) u 11, de 64 bits, con **2 GB libres** como mínimo (la aplicación ocupa unos 500 MB y la base propia unos 100 MB al inicio). Sirve Windows Home. |
+| Instalador | `Estética Leal POS Setup 0.8.0.exe`, **148 429 007 bytes (141,6 MiB)**. SHA-256 `1974529744d97b8fcb5f5be4d74655cfc538512cca7adb1abb6d17681e84bbd1` (se vuelve a calcular al generar uno nuevo). Se genera con `npm run package` y queda en `release\`. No está en el repositorio ni en GitHub. |
+| Permisos | Una cuenta normal de Windows. **No pide administrador** y no instala servicios. |
+| Contraseñas | Solo los PIN que tú eliges durante la instalación. Las contraseñas de la base las genera el sistema, son aleatorias y se guardan protegidas por Windows. |
 
-## 1. Instalar PostgreSQL (una sola vez)
+## 1. Copiar el instalador
 
-1. Descarga el instalador de PostgreSQL para Windows (EnterpriseDB) desde `https://www.postgresql.org/download/windows/`. Las pruebas se hicieron con la versión 18; si instalas otra, "Probar conexión" del paso 4 confirma que sirve.
-2. Ejecútalo con las opciones por omisión: carpeta de instalación, componentes (PostgreSQL Server, pgAdmin 4 y Command Line Tools; **Stack Builder no hace falta**) y puerto **5432**.
-3. Cuando pida la contraseña del superusuario `postgres`, escribe una que recuerdes y **anótala** (se usa en el paso 3). No la compartas ni la guardes en el proyecto.
-4. Idioma/"locale": deja el que sugiere. La herramienta del paso 3 se adapta a la codificación del servidor.
-5. Termina la instalación. El servicio `postgresql-x64-NN` queda iniciado y se inicia solo con Windows.
+Cópialo a la laptop con una memoria USB. Comprueba que no se dañó (PowerShell):
 
-Comprobación (opcional): abre pgAdmin 4 e inicia sesión con la contraseña del paso 3; debe mostrar el servidor sin errores.
+```powershell
+Get-FileHash "$env:USERPROFILE\Downloads\Estética Leal POS Setup 0.8.0.exe" -Algorithm SHA256
+```
+
+El resultado debe ser el SHA-256 de la tabla.
 
 ## 2. Instalar la aplicación
 
-1. Doble clic en `Beauty POS Setup 0.7.0.exe`.
-2. Windows SmartScreen puede avisar "Windows protegió su PC" porque el instalador **no está firmado** (no hay certificado de firma de código). Es esperado: **Más información → Ejecutar de todas formas**.
-3. La instalación es de un solo clic y por usuario (no pide permisos de administrador). Crea los accesos directos **Estética Leal POS** en el escritorio y en el menú Inicio y abre la aplicación al terminar.
-4. Como todavía no hay base configurada, la aplicación muestra la **ventana de configuración** ("Falta la configuración de la base de datos"). **Ciérrala por ahora** (la configuración se hace en el paso 4).
+1. Doble clic en el instalador. Windows SmartScreen puede avisar "Windows protegió su PC" porque **el instalador no está firmado**: **Más información → Ejecutar de todas formas**.
+2. Es de un solo clic y por usuario (no pide administrador). Crea los accesos **Estética Leal POS** en el escritorio y en el menú Inicio y abre la aplicación.
+   Se instala en `C:\Users\<tu usuario>\AppData\Local\Programs\Beauty POS\`.
 
-La aplicación se instala normalmente en `C:\Users\<tu usuario>\AppData\Local\Programs\Beauty POS\`. Sus datos de configuración quedan en `%APPDATA%\Beauty POS\config.json` (contraseña protegida por Windows).
+## 3. Primer inicio: el asistente
 
-## 3. Preparar la base de demostración (datos ficticios)
+Como todavía no hay base de datos, aparece **"Bienvenido a Estética Leal POS"**:
 
-1. Abre la carpeta de la aplicación y entra a `resources\tools`: `C:\Users\<tu usuario>\AppData\Local\Programs\Beauty POS\resources\tools`.
-2. Doble clic en **`Preparar-Base-Demo.cmd`**. Se abre una ventana de PowerShell y comprueba que PostgreSQL responde.
-3. Contesta lo que pide (lo que escribes en los campos de contraseña y PIN no se muestra):
+1. **Comprobaciones** (automáticas): Windows de 64 bits y versión, espacio libre, PostgreSQL incluido en el instalador, si hay **otro PostgreSQL** en el equipo (no se usa ni se toca) y el **puerto**.
+   * El sistema usa su propio PostgreSQL, **solo para este equipo** (`127.0.0.1`), en el puerto **55432**; si está ocupado usa el siguiente libre (55433-55450) y lo recuerda. No se abre nada en el Firewall.
+   * Si falta espacio o el equipo no es compatible, el botón **Instalar** queda deshabilitado y se explica por qué.
+2. **¿Cómo quieres empezar?**
+   * **Demostración:** datos ficticios (24 productos, 3 días de ventas y cajas, 12 ventas, 2 devoluciones, un faltante de $5.00). Eliges **dos PIN** (6 a 8 dígitos): Administrador Demo y Vendedor Demo, distintos.
+   * **Instalación limpia:** sin productos ni ventas. Escribes el nombre de la persona administradora y su PIN. Los demás usuarios se crean después desde *Usuarios*.
+   Cada PIN se escribe dos veces. No hay PIN predeterminados y los PIN no vienen en el instalador.
+3. **Instalar.** Se muestran los pasos (comprobaciones, copia verificada de PostgreSQL, creación de la instancia, inicio, base y datos, configuración protegida, verificación). Tarda unos 10-20 segundos.
+4. La aplicación **se reinicia sola** y muestra la pantalla de PIN con *Estética Leal*. Entra con el PIN que elegiste.
 
-   | Pregunta | Qué escribir |
-   |---|---|
-   | Contraseña del administrador de PostgreSQL | La del paso 1. |
-   | Nombre de la base de demostración | Enter para `beauty_pos_demo`. |
-   | PIN del Administrador Demo | 6 a 8 dígitos, dos veces. |
-   | PIN del Vendedor Demo | 6 a 8 dígitos, distinto al anterior, dos veces. |
-   | Contraseña para el usuario de la aplicación | **Recomendado: escribe una tuya y anótala.** Con Enter se genera una segura que se muestra solo una vez. |
+**Una vez hecha la elección, no se cambia de una modalidad a la otra:** una instalación limpia nunca recibe datos ficticios encima, y una instalación con ventas reales jamás se "reinicia como demostración".
 
-4. Al terminar, la ventana muestra: servidor, puerto, base de datos, usuario (`pos_demo_runtime`) y contraseña del usuario de la aplicación. **Cópialos**: se usan en el paso 4.
+Si algo falla, la ventana dice **en qué paso** y por qué; lo que se alcanzó a crear se deshizo (nada preexistente se toca); el diagnóstico (sin contraseñas ni PIN) queda en
+`%LOCALAPPDATA%\Estetica Leal POS\logs\provision-….log`; pulsa **Reintentar**.
 
-Qué hace la herramienta (y qué no):
+## 4. Presentar
 
-* Crea una base **nueva**, un usuario de PostgreSQL de **privilegios mínimos** para la aplicación (no puede crear ni borrar tablas) y carga los datos ficticios con el esquema oficial.
-* **Nunca modifica una base que ya existe.** Si el nombre ya existe, o es `beauty_pos`/`beauty_pos_smoke`, se niega y no deja nada a medias. Si algo falla en el camino, elimina solo lo que ella misma creó.
-* Los PIN **no están en el instalador**: los eliges tú en este paso y solo se guardan como hash (scrypt). Los datos no contienen direcciones, teléfonos, RFC ni logotipo de ningún comercio.
+El guion está en `docs/DEMO_CHECKLIST.md`, sección C. El Vendedor Demo ve solo Vender, Caja, Historial, Devoluciones y Ver Stock; el Administrador Demo ve todo.
 
-### Qué datos trae la demostración
+## 5. Repetir la demostración (dejar los datos como al principio)
 
-* 24 productos con SKU `DEMO-…` en 6 categorías (cabello, tratamientos, color, accesorios, uñas, cuidado de la piel); 6 con código de barras interno para probar el lector.
-* Tres cajas cerradas de los 3 días anteriores con 12 ventas en efectivo y tarjeta, un retiro, un ingreso y **un faltante de $5.00** en uno de los cierres.
-* Dos devoluciones: una **reembolsada en efectivo** (pagada al día siguiente) y una **pendiente de pago** para pagarla en vivo con el PIN del administrador.
-* Dos usuarios: **Administrador Demo** y **Vendedor Demo**. Productos con poco stock para el tablero.
-* La configuración del negocio queda como la crea el sistema: sin dirección, teléfono ni datos fiscales (se pueden escribir desde *Configuración* si el dueño lo desea).
+Doble clic en `C:\Users\<tu usuario>\AppData\Local\Programs\Beauty POS\resources\tools\Mantenimiento.cmd` (o `"Beauty POS.exe" --manage`). Se abre la ventana de **Mantenimiento**:
 
-## 4. Configurar la aplicación
+* **Reiniciar la demostración** (solo existe en instalaciones de demostración): elige PIN nuevos, escribe `REINICIAR` y confirma. Antes se crea un **respaldo verificado** (`backups\`); luego se borra solo la base de
+  demostración que este instalador creó, se carga de nuevo y la aplicación se cierra. Ábrela otra vez y entra con los PIN nuevos. Tarda unos segundos.
+* En una instalación **limpia** esa opción no aparece.
 
-1. Abre **Estética Leal POS** (acceso directo del escritorio). Aparece la ventana de configuración.
-2. Escribe: Servidor `localhost`, Puerto `5432`, Base de datos `beauty_pos_demo`, Usuario `pos_demo_runtime` y la contraseña del usuario de la aplicación (paso 3).
-3. **Probar conexión.** Debe mostrar la versión de PostgreSQL, "privilegios mínimos", "Esquema al día" y "Ya existe un administrador".
-4. **Guardar y reiniciar.** La aplicación se reinicia sola y muestra la pantalla de PIN con el nombre **Estética Leal**.
-5. Entra con el PIN del Administrador Demo (verás el tablero) o del Vendedor Demo (va directo a Vender, sin Reportes ni Usuarios).
+## 6. Respaldos y estructura de la base
 
-La contraseña queda protegida con Windows en `config.json`; no se guarda en texto claro ni en el instalador. Para cambiarla más adelante: ejecuta `"…\Beauty POS.exe" --reconfigure`.
+En la misma ventana de Mantenimiento:
 
-## 5. Empezar la demostración de nuevo (dejar los datos como al principio)
+* **Crear respaldo ahora:** una copia verificada (`pg_dump` + comprobación) en `%LOCALAPPDATA%\Estetica Leal POS\backups\`, con su resumen y huella SHA-256. Cópiala además a otra ubicación (memoria USB).
+* **Actualizar estructura:** solo se habilita cuando una versión nueva de la aplicación trae cambios de estructura; siempre hace antes un respaldo verificado. La aplicación normal **nunca** modifica la estructura sola.
+* Restaurar un respaldo: **todavía no hay botón** (la contraseña administrativa de la base solo la puede leer la aplicación). Los respaldos son archivos estándar de PostgreSQL y la restauración, siempre hacia una base **nueva**, está implementada y probada en las herramientas del proyecto; hoy la hace un técnico (`docs/OPERATIONS.md`). Guarda tus respaldos fuera de la laptop.
 
-Después de ensayar (ventas, devoluciones, cierres) puedes dejar la demostración como nueva. En pgAdmin 4 → *Query Tool* conectado a la base **`postgres`**:
-
-```sql
-DROP DATABASE beauty_pos_demo WITH (FORCE);
-DROP ROLE pos_demo_runtime;
-```
-
-Después vuelve a ejecutar el paso 3 (usa la **misma contraseña** del usuario de la aplicación para no tener que reconfigurar el paso 4). Comprobado: el procedimiento repite exactamente los mismos datos.
-No borres ninguna otra base. Si la laptop tiene datos reales de otra instalación, usa otro nombre de base en el paso 3.
-
-## 6. Desinstalar
-
-*Configuración de Windows → Aplicaciones → Estética Leal POS (Beauty POS) → Desinstalar.* El desinstalador **no borra** PostgreSQL ni la base ni `%APPDATA%\Beauty POS` (por diseño: nunca elimina datos). Para quitarlo todo: pasos del apartado 5 y borrar esa carpeta.
-
-## Problemas frecuentes
+## 7. Si algo no funciona
 
 | Síntoma | Qué hacer |
 |---|---|
-| "PostgreSQL no responde en localhost:5432" | Servicios de Windows → `postgresql-x64-NN` → Iniciar. Revisa que el puerto sea 5432. |
-| "La contraseña de postgres no es correcta" | Es la del paso 1. Si no se recuerda, hay que restablecerla con las herramientas de PostgreSQL (no con esta aplicación). |
-| "La base ya existe" | Elige otro nombre o aplica el apartado 5. La herramienta no modifica bases existentes. |
-| La ventana de configuración dice "la base de datos no está inicializada" | Se está apuntando a otra base: usa la creada en el paso 3. La aplicación nunca crea tablas por sí sola. |
-| PIN incorrecto repetido | Tras varios intentos fallidos el sistema se bloquea un rato (protección contra adivinar el PIN) y lo indica en pantalla. Espera y reintenta; el bloqueo no se pierde reiniciando. |
+| "No se pudo iniciar la base de datos…" al abrir | Cierra y abre otra vez. Si persiste, el detalle está en `%LOCALAPPDATA%\Estetica Leal POS\logs\postgres\` (sin contraseñas). No borres la carpeta `data`. |
+| Otro programa tomó el puerto | La aplicación elige sola otro puerto libre y actualiza su configuración. |
+| "Los archivos de PostgreSQL de esta instalación no son los originales" | Un antivirus o una persona modificó la copia. Reinstala la aplicación (el instalador restituye el paquete) y abre de nuevo; los datos no se tocan. |
+| "La contraseña … no se puede leer con esta cuenta de Windows" | La configuración está protegida para la cuenta de Windows que instaló. Entra con esa cuenta; con otra cuenta use *Usar un PostgreSQL que ya tengo* o restaure un respaldo. |
 | SmartScreen bloquea el instalador | Más información → Ejecutar de todas formas (falta firma de código). |
+| PIN incorrecto repetido | Tras varios intentos fallidos el sistema se bloquea un rato; espera y reintenta. El bloqueo no se pierde reiniciando. |
 
-## Para quien genera el instalador (PC de desarrollo)
+## 8. Actualizar la aplicación sin perder datos
+
+Ejecuta el instalador nuevo encima (no hace falta desinstalar). Reemplaza solo la aplicación: la base, los usuarios, los PIN, los respaldos y las contraseñas **no se tocan**. Si la versión nueva
+trae un PostgreSQL de la misma versión mayor (por ejemplo 18.6 → 18.9) se adopta sola, de forma segura (se conserva el anterior si el nuevo no arranca); un cambio de versión mayor **no** se hace solo.
+Si trae cambios de estructura, la aplicación avisa y se aplican desde Mantenimiento, con respaldo previo.
+
+## 9. Desinstalar
+
+*Configuración de Windows → Aplicaciones → Estética Leal POS (Beauty POS) → Desinstalar* quita **solo la aplicación y los accesos directos**. **Se conservan** la base de datos y su carpeta
+(`%LOCALAPPDATA%\Estetica Leal POS\`: `data`, `runtime`, `logs`, `backups`) y la configuración (`%APPDATA%\Beauty POS\`). Reinstalar después reconecta con todo.
+
+* La base de datos es un proceso de tu cuenta (no un servicio de Windows): se detiene al cerrar la aplicación, al cerrar sesión o al apagar el equipo. Si desinstalaste con la aplicación abierta, ciérrala antes.
+* Para **retirar todo** (irreversible; antes haz un respaldo y cópialo): ver "Retirar una instalación" en `docs/OPERATIONS.md`. No hay un botón que lo haga: es un procedimiento manual a propósito.
+
+## 10. Con un PostgreSQL que ya tienes, o con una instalación 0.7.0
+
+* Si ya existía una configuración (`%APPDATA%\Beauty POS\config.json`, de la versión 0.7.0 o hecha a mano) la aplicación **la respeta**: no muestra el asistente y no crea otra base.
+* Para usar un PostgreSQL propio en una instalación nueva, en el asistente pulsa **Usar un PostgreSQL que ya tengo (avanzado)** y escribe las credenciales (usa un usuario de privilegios mínimos).
+* El procedimiento anterior (`resources\tools\Preparar-Base-Demo.cmd`, que prepara datos ficticios en un PostgreSQL instalado aparte) sigue incluido para ese caso.
+
+## 11. Para quien genera el instalador (PC de desarrollo)
 
 ```bash
-npm run package        # compila, empaqueta e instala el generador NSIS: release\Beauty POS Setup 0.7.0.exe
-npm run test:demo      # ensayo completo sin instalar nada: extrae el instalador y recorre toda esta guía
+npm run package            # descarga (una vez) y verifica PostgreSQL, compila y genera release\Estética Leal POS Setup 0.8.0.exe
+npm run test:installer     # 29 comprobaciones del aprovisionamiento contra PostgreSQL real, en carpetas temporales
+npm run test:installer-app # 14 comprobaciones: extrae el instalador y maneja el asistente con la interfaz real
+npm run test:demo          # ensayo con un PostgreSQL externo (ruta avanzada)
 ```
 
 El instalador no se publica en GitHub ni se distribuye desde el repositorio; se copia a mano a la laptop.
+
+## Limitaciones pendientes
+
+* Sin firma de código (aviso de SmartScreen) y sin actualización automática.
+* La instancia de PostgreSQL no es un servicio de Windows: arranca al abrir la aplicación y se detiene al cerrarla. No hay respaldos programados para esta instancia (se hacen desde Mantenimiento).
+* El icono "EL" es provisional; los datos comerciales (logotipo, dirección, teléfono, RFC) los define el dueño en *Configuración*.
+* Impresora, lector de códigos y terminal bancaria sin probar con equipo físico.

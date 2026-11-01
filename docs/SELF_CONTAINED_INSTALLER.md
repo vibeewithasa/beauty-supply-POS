@@ -30,11 +30,12 @@ El requisito original pedía "servicio con inicio automático". Se evaluó y **n
   de servicio sin probar es un riesgo que el propietario no debe llevar a una presentación.
 * PostgreSQL se rehúsa a correr como Administrador: el proceso del usuario normal es *más* restrictivo (no es SYSTEM, no es administrador, solo toca su propia carpeta).
 * Para esta aplicación (una caja en una sola laptop) el servicio no aporta nada que la aplicación no haga: **la aplicación arranca la instancia al abrirse** (`pg_ctl start`, espera a
-  que acepte conexiones) y la deja encendida al cerrarse. Tras reiniciar Windows, abrir la aplicación la vuelve a levantar sola (PostgreSQL se recupera de un apagado sucio con su
+  que acepte conexiones) y la **apaga limpiamente al cerrarse** (sin procesos huérfanos y sin archivos bloqueados al actualizar o desinstalar). Tras reiniciar Windows, abrir la aplicación la vuelve a levantar sola (PostgreSQL se recupera de un apagado sucio con su
   registro de transacciones; esto se probó matando el proceso a la fuerza).
 * El diseño aísla todo detrás de `scripts/lib/managed-pg.mjs`: sumar un modo "servicio" más adelante (instalador por equipo) no cambia el resto.
 
-La contrapartida (documentada): si nadie abre la aplicación, PostgreSQL no está corriendo; las copias de seguridad programadas la encienden si hace falta (`docs/OPERATIONS.md`).
+La contrapartida (documentada): si nadie abre la aplicación, PostgreSQL no está corriendo, y **no hay respaldos programados** para esta instancia (limitación pendiente): los respaldos se hacen desde la
+ventana de Mantenimiento (`Beauty POS.exe --manage`, o `resources\tools\Mantenimiento.cmd`).
 
 ## 2. Origen, licencia y dependencias del PostgreSQL empaquetado
 
@@ -88,8 +89,9 @@ C:\Users\<usuario>\AppData\Roaming\Beauty POS\config.json   ← conexión de la 
 ```
 
 La propiedad no se afirma por nombres de carpeta o puertos: se exige que coincidan (1) el `installId` dentro de `data\estetica-leal-managed.json`, (2) el *identificador de sistema*
-del clúster (`pg_controldata`, único por `initdb`) con el del manifiesto, y (3) en una instancia en marcha, `pg_control_system().system_identifier`. Cualquier operación destructiva
-(reiniciar la demostración, deshacer un aprovisionamiento fallido) exige las tres, y además que la base lleve la marca de "gestionada por Estética Leal" (comentario de la base).
+del clúster (`pg_controldata`, único por `initdb`) con el del manifiesto, y (3) en una instancia en marcha, `pg_control_system().system_identifier`. Encender la instancia exige (1) y (2); toda operación de mantenimiento sobre una instalación
+terminada (respaldo, actualizar estructura, reiniciar la demostración) exige las tres, y reiniciar la demostración exige además que la base lleve la marca de "demostración gestionada por esta instalación" (comentario de la base con el
+`installId`). Deshacer un intento de instalación fallido exige la marca (1) con el `installId` de ese intento: una carpeta de datos sin esa marca nunca se borra.
 Un PostgreSQL ajeno nunca cumple esas condiciones, así que nunca se modifica ni se elimina.
 
 ## 5. Configuración del clúster y seguridad
@@ -134,13 +136,46 @@ PostgreSQL ajeno **no** es un obstáculo ni se usa: se informa y se continúa co
 * **Actualizar:** la aplicación nueva reutiliza la instancia. Si trae el mismo PostgreSQL, nada cambia; si trae una *versión menor* más nueva, se copia junto a la anterior y se
   cambia al detener la instancia (compatible a nivel de datos); un cambio de versión *mayor* se rechaza (requiere `pg_upgrade`, un procedimiento aparte). Un esquema más viejo que el de la
   aplicación no se migra solo: aparece el aviso y la ventana `--manage` exige un respaldo verificado antes de "Actualizar estructura".
-* **Desinstalar:** quita la aplicación y los accesos directos. **Conserva** la raíz administrada, el clúster, las bases, los respaldos y `config.json`. La instancia puede seguir
-  encendida hasta cerrar sesión o apagar Windows; cómo detenerla o retirarla sin perder datos está en `docs/OPERATIONS.md`. Una eliminación completa es un procedimiento aparte, con
+* **Desinstalar:** quita la aplicación y los accesos directos. **Conserva** la raíz administrada, el clúster, las bases, los respaldos y `config.json` (`deleteAppDataOnUninstall: false`; el
+  desinstalador de NSIS no conoce la carpeta `Estetica Leal POS`). La instancia se detiene al cerrar la aplicación; si se desinstala con la aplicación abierta o se la mató a la fuerza, puede seguir
+  encendida hasta cerrar sesión o apagar Windows. Cómo detenerla o retirarla sin perder datos está en `docs/OPERATIONS.md`. Una eliminación completa es un procedimiento aparte, con
   respaldo previo y confirmación escrita, y solo actúa sobre recursos que cumplen la propiedad de §4.
 * **Demostración vs. limpia:** el modo se fija al instalar. Una instalación con datos jamás recibe datos ficticios encima; "Reiniciar demostración" es una acción explícita de `--manage`,
   solo sobre una base marcada como demostración gestionada, con respaldo previo y confirmación escrita.
 
-## 9. Lo que falta probar (físico)
+## 9. Qué cubre cada prueba
+
+Los 25 escenarios pedidos para este sprint y el estado real de cada uno (INST = `npm run test:installer`, 29 comprobaciones con PostgreSQL real en carpetas temporales; APP = `npm run test:installer-app`, 14, con el instalador extraído y la interfaz real):
+
+| # | Escenario | Estado |
+|---|---|---|
+| 01 | Windows sin PostgreSQL | **No reproducible aquí** (esta PC tiene su propio PostgreSQL 18). El diseño no lo usa; falta probarlo en un Windows limpio (checklist D2). |
+| 02 | Windows con PostgreSQL en 5432 | INST-03 (servicio ajeno detectado, no tocado), INST-27 (sus bases, roles y hora de arranque idénticos), APP-02 |
+| 03 | Puerto 55432 ocupado | INST-05, INST-13 (lo toma otro programa con la instancia apagada) |
+| 04 | Instancia antigua del POS | APP-13 (config.json existente / PostgreSQL externo: sin asistente ni instancia propia); INST-16/17 (restos de un intento previo) |
+| 05 | Primera instalación, modo demo | INST-06/07/08, APP-04/05/06/07/08 |
+| 06 | Primera instalación, modo limpio | INST-19/20, APP-12 |
+| 07 | Segundo arranque sin internet | APP-09, APP-10 (ninguna conexión fuera de este equipo), INST-26 (el código de instalación no tiene cliente HTTP). **No** se probó con la red físicamente desconectada. |
+| 08 | Reinicio de Windows y servicio | INST-12 (proceso matado a la fuerza: recuperación sin perder lo confirmado). **No hay servicio** (ver §1); el reinicio real de Windows es manual (D4). |
+| 09 | Instalador ejecutado de nuevo | INST-11 (cero cambios, nunca siembra encima). La repetición del `.exe` NSIS: manual. |
+| 10 | Actualización conservando datos | INST-23 (estructura con respaldo previo), INST-24c (PostgreSQL de versión menor, mayor rechazada, build roto descartado). La actualización NSIS encima: manual. |
+| 11 | Instalación fallida con rollback seguro | INST-16/17/18, APP-11 (paso nombrado, nada queda, reintento) |
+| 12 | Credenciales inválidas | INST-22 |
+| 13 | Falta de elevación | **No aplica por diseño**: INST-09 demuestra que todo corre sin elevación y como el usuario normal. |
+| 14 | Espacio insuficiente | INST-04 |
+| 15 | PostgreSQL detenido | INST-12, INST-14 (detenido + arranque), INST-15 |
+| 16 | Desinstalación conservando datos | INST-25 (sin la carpeta de la aplicación la instancia sigue usable). El desinstalador NSIS: manual. |
+| 17 | Reinstalación y reconexión | INST-25, APP-09 |
+| 18 | Ventas y devoluciones | APP-08 |
+| 19 | Historial y conciliación de caja | APP-07, APP-08 |
+| 20 | Respaldos y restauración | INST-21, APP-10b |
+| 21 | Ausencia de secretos en paquete y logs | INST-10, APP-01 (instalador), APP-05 (disco), APP-10b |
+| 22 | Compatibilidad con 0.7.0 | APP-13, `test:packaged` (PK-09, PK-15), `test:demo` |
+| 23 | Hash del paquete incorporado | INST-01/02/15, APP-01, APP-11 |
+| 24 | Permisos de carpetas y procesos | INST-09, APP-05 (SID de las ACL, propietario del proceso, solo 127.0.0.1) |
+| 25 | Bases ajenas sin modificar | INST-27 (+ `beauty_pos` y las E2E preservadas no se abren para escritura) |
+
+## 10. Lo que falta probar (físico)
 
 Ver `docs/DEMO_CHECKLIST.md` sección D. En resumen: ejecutar el `.exe` en un Windows limpio (SmartScreen, accesos directos, primera apertura), el asistente completo allí, reinicio de Windows,
 desinstalar/reinstalar, aviso (o ausencia) del Firewall, antivirus, y hardware (impresora, lector, terminal).

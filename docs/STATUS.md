@@ -106,11 +106,15 @@ describes the early MVP and is intentionally not edited here.
 - Lighter-weight leftovers: a legacy unused `drizzle/migrations/0001_initial.sql`,
   the renderer lint is still gentle (warnings only for unused names).
 
-## Demonstration build for the owner's laptop (Sprint 07)
+## Demonstration build for the owner's laptop (Sprint 07) and the self-contained installer (Sprint 07.1)
 
-* A demonstrable installer, a documented laptop procedure (`docs/DEMO_INSTALL_LAPTOP.md`), a fictional dataset (24 products, 3 closed days, 12 sales, 2 returns) and a presentation checklist
-  (`docs/DEMO_CHECKLIST.md`) exist. Visual identity: "Estética Leal" in the window title, login, navigation and ticket; the "EL" icon is provisional. No commercial data is invented.
-* Verified here: everything driven by `npm run test:demo`. **Not verified:** running/uninstalling the NSIS installer, the interactive PowerShell prompts, a physical printer/reader/terminal (manual list in the checklist, section D).
+* Sprint 07 made a demonstrable installer plus a fictional dataset and a presentation checklist (`docs/DEMO_CHECKLIST.md`). Sprint 07.1 (version 0.8.0) removed the manual PostgreSQL work: the installer carries a pinned official PostgreSQL
+  and the first start prepares a dedicated, loopback-only, SCRAM-only instance with either the demonstration data or a clean database (`docs/SELF_CONTAINED_INSTALLER.md`, `docs/DEMO_INSTALL_LAPTOP.md`).
+* **Verdicts (kept separate):** READY FOR MERGE = see the sprint report (critical controls). READY FOR SELF-CONTAINED DEMO = **NOT YET**: it requires a real install on an isolated Windows, which has not been possible (no disposable
+  Windows; nothing was installed on the development PC). READY FOR STORE = no (signature, printer/reader/terminal, scheduled backups, product decisions).
+* Verified here: everything driven by `npm run test:installer` (29), `test:installer-app` (14), `test:demo` (14) and `test:packaged` (16). **Not verified:** running/uninstalling the NSIS installer, a real Windows restart, the Firewall behavior,
+  antivirus interaction, a clean Windows without any PostgreSQL, and physical printer/reader/terminal (manual list, `docs/DEMO_CHECKLIST.md` section D).
+* Not a service: the instance starts with the application and stops when it closes. No scheduled backups for it yet (maintenance window only).
 
 ## Requirements before distributing to a real store
 
