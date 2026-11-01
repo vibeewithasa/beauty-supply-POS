@@ -530,3 +530,57 @@ export async function ensureRunning({ layout, manifest, bundleDir = null, portFi
   await startCluster({ layout, runtimeDir });
   return { port, portChanged, alreadyRunning: false, runtimeDir };
 }
+
+// ------------------------------------------------------------------------------------------------ PostgreSQL minor updates
+const versionTuple = (v) => String(v).split(/[.-]/).map((n) => parseInt(n, 10) || 0);
+/** "18.7-1" vs "18.6-1": 1 when a is newer, 0 equal, -1 older (same major assumed by the caller). */
+export function compareVersions(a, b) {
+  const x = versionTuple(a);
+  const y = versionTuple(b);
+  for (let i = 0; i < Math.max(x.length, y.length); i++) {
+    const d = (x[i] ?? 0) - (y[i] ?? 0);
+    if (d) return d > 0 ? 1 : -1;
+  }
+  return 0;
+}
+
+/**
+ * A new application version may carry a newer PostgreSQL. Same major version (a minor update, data-compatible): the new package is
+ * verified and copied next to the old one, the instance is restarted on it, and only after it answers is the old copy removed; if it does
+ * not start, the manifest keeps pointing at the old copy and the instance is started on that. A DIFFERENT major version needs pg_upgrade,
+ * a procedure of its own: it is refused here and the instance keeps running on the version it has.
+ * Returns { action: "none" | "updated" | "refused" | "rolled-back", ... }.
+ */
+export async function updateRuntimeIfNewer({ layout, manifest, bundleDir }) {
+  let bm;
+  try {
+    bm = readBundleManifest(bundleDir);
+  } catch {
+    return { action: "none" };
+  }
+  const current = manifest.postgres.version;
+  if (bm.version === current) return { action: "none" };
+  if (bm.major !== manifest.postgres.major) return { action: "refused", reason: `El paquete trae PostgreSQL ${bm.major} y la instancia usa ${manifest.postgres.major}: un cambio de versión mayor necesita un procedimiento aparte (pg_upgrade) y no se hace solo.` };
+  if (compareVersions(bm.version, current) <= 0) return { action: "none" };
+  const oldDir = path.join(layout.root, manifest.postgres.runtimeDir);
+  const { runtimeDir: newDir } = installRuntime(bundleDir, layout);
+  const wasRunning = clusterRunning(layout, oldDir);
+  if (wasRunning) stopCluster({ layout, runtimeDir: oldDir });
+  const previous = JSON.parse(JSON.stringify(manifest.postgres));
+  manifest.postgres.version = bm.version;
+  manifest.postgres.runtimeDir = path.join("runtime", bm.version);
+  try {
+    writeManifest(layout, manifest);
+    await startCluster({ layout, runtimeDir: newDir });
+    if (!wasRunning) stopCluster({ layout, runtimeDir: newDir });
+  } catch (e) {
+    try { stopCluster({ layout, runtimeDir: newDir, mode: "immediate" }); } catch { /* not running */ }
+    manifest.postgres = previous;
+    writeManifest(layout, manifest);
+    fs.rmSync(newDir, { recursive: true, force: true });
+    if (wasRunning) await startCluster({ layout, runtimeDir: oldDir });
+    return { action: "rolled-back", reason: "La versión nueva de PostgreSQL no pudo iniciar; se conserva la anterior. " + (e?.message ?? "") };
+  }
+  fs.rmSync(oldDir, { recursive: true, force: true });
+  return { action: "updated", from: current, to: bm.version };
+}

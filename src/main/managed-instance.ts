@@ -14,7 +14,7 @@ import { app } from "electron";
 import { configFilePath } from "../backend/config-path";
 import { readConfigFile, writeConfigV2 } from "../backend/config-store";
 import { safeCipher } from "../backend/safe-cipher";
-import { ManagedError, clusterRunning, ensureRunning, layoutFor, readManifest, scrubSecrets, serverLogTail, stopCluster, writeManifest } from "../../scripts/lib/managed-pg.mjs";
+import { ManagedError, clusterRunning, ensureRunning, layoutFor, readManifest, scrubSecrets, serverLogTail, stopCluster, updateRuntimeIfNewer, writeManifest } from "../../scripts/lib/managed-pg.mjs";
 import type { Layout, Manifest } from "../../scripts/lib/managed-pg.mjs";
 import type { Connection } from "../../scripts/lib/provision.mjs";
 
@@ -95,6 +95,10 @@ export async function startManagedInstance(): Promise<StartResult> {
   }
   if (!manifest || manifest.state !== "ready") return { ok: false, headline: "La instalación no está completa", detail: "Vuelve a abrir la aplicación para terminar la preparación." };
   try {
+    // a newer application may carry a newer PostgreSQL of the same major version; a different major is refused (never automatic)
+    const upd = await updateRuntimeIfNewer({ layout: l, manifest, bundleDir: bundleDir() });
+    if (upd.action === "updated") console.log(`MANAGED_RUNTIME_UPDATED: ${upd.from} -> ${upd.to}`);
+    else if (upd.action !== "none") console.error(`MANAGED_RUNTIME_${upd.action.toUpperCase()}: ${upd.reason ?? ""}`);
     const r = await ensureRunning({ layout: l, manifest });
     if (!r.alreadyRunning) startedByUs = true;
     if (r.portChanged) followPort(l, manifest, r.port);

@@ -16,7 +16,7 @@ import { expectedTotals } from "../scripts/lib/demo-data.mjs";
 import { restoreToNewDatabase, withClient } from "../scripts/lib/db-ops.mjs";
 import {
   auditAcl, auditClusterConfig, clusterRunning, currentUserSid, detectForeignPostgres, ensureRunning, layoutFor, preflight, readManifest, readConfiguredPort, adminUrl,
-  stopCluster, verifyOwnership, verifyTree, readBundleManifest, installRuntime, isPortFree,
+  stopCluster, verifyOwnership, verifyTree, readBundleManifest, installRuntime, isPortFree, sha256File, updateRuntimeIfNewer,
 } from "../scripts/lib/managed-pg.mjs";
 import { backupManaged, loadManaged, managedStatus, provisionManagedInstance, resetDemo, updateSchema } from "../scripts/lib/provision.mjs";
 
@@ -517,6 +517,51 @@ try {
     expect(s.backups.count >= 1 && /\.dump$/.test(s.backups.latest), "sees the backup made earlier: " + s.backups.latest);
     const c = await managedStatus({ root: cleanRoot, adminPassword: adminPwdOf.get(cleanRoot), migrationsDir: MIGRATIONS });
     expect(c.mode === "clean" && c.backups.count === 0, "clean status has no backups yet");
+  });
+
+  await test("INST-24c.a_newer_minor_postgresql_updates_in_place_keeps_the_data_and_a_different_major_or_a_broken_build_is_never_adopted", "integration", async () => {
+    const fake = (version, major, breakPostgres = false) => {
+      const d = path.join(os.tmpdir(), "pos-inst-fakebundle-" + rnd(4));
+      tmpRoots.push(d);
+      fs.cpSync(BUNDLE, d, { recursive: true });
+      const mf = path.join(d, "postgresql-bundle.json");
+      const m = JSON.parse(fs.readFileSync(mf, "utf8"));
+      m.version = version; m.major = major;
+      if (breakPostgres) {
+        fs.writeFileSync(path.join(d, "bin", "postgres.exe"), "this is not a program");
+        const f = m.files.find((x) => x.path === "bin/postgres.exe");
+        f.size = fs.statSync(path.join(d, "bin", "postgres.exe")).size;
+        f.sha256 = sha256File(path.join(d, "bin", "postgres.exe"));
+      }
+      fs.writeFileSync(mf, JSON.stringify(m));
+      return d;
+    };
+    const root = mkRoot("minor");
+    await install(root, "clean", { adminName: "Admin Minor", adminPin: pin6() });
+    const l = layoutFor(root);
+    const rtOld = runtimeOf(root);
+    stopCluster({ layout: l, runtimeDir: rtOld });
+    const manifest = () => readManifest(l);
+    const usersOf = async () => (await q(adminUrl({ port: connOf.get(root).port, password: adminPwdOf.get(root), database: "estetica_leal_pos" }), "select count(*)::int n from users"))[0].n;
+
+    expect((await updateRuntimeIfNewer({ layout: l, manifest: manifest(), bundleDir: BUNDLE })).action === "none", "same version: nothing to do");
+    const major = await updateRuntimeIfNewer({ layout: l, manifest: manifest(), bundleDir: fake("19.0-1", 19) });
+    expect(major.action === "refused" && /pg_upgrade/.test(major.reason) && manifest().postgres.version === "18.6-1" && fs.existsSync(rtOld), "a different major version is refused: " + major.action);
+    expect((await updateRuntimeIfNewer({ layout: l, manifest: manifest(), bundleDir: fake("18.1-1", 18) })).action === "none", "an older build is ignored");
+
+    const broken = await updateRuntimeIfNewer({ layout: l, manifest: manifest(), bundleDir: fake("18.8-1", 18, true) });
+    expect(broken.action === "rolled-back" && manifest().postgres.version === "18.6-1" && !fs.existsSync(path.join(root, "runtime", "18.8-1")), "a build that does not start is not adopted and its copy is removed: " + broken.action);
+    await ensureRunning({ layout: l, manifest: manifest(), ...portRangeFor(connOf.get(root).port) });
+    expect(await usersOf() === 1, "the instance still works on the old version");
+    stopCluster({ layout: l, runtimeDir: rtOld });
+
+    const up = await updateRuntimeIfNewer({ layout: l, manifest: manifest(), bundleDir: fake("18.9-1", 18) });
+    expect(up.action === "updated" && up.from === "18.6-1" && up.to === "18.9-1", "minor update: " + JSON.stringify(up));
+    expect(manifest().postgres.version === "18.9-1" && manifest().postgres.runtimeDir === path.join("runtime", "18.9-1") && !fs.existsSync(rtOld), "manifest points at the new copy; the old one is gone");
+    await ensureRunning({ layout: l, manifest: manifest(), ...portRangeFor(connOf.get(root).port) });
+    expect(processesUnder(path.join(root, "runtime", "18.9-1")) >= 1, "postgres now runs from the new runtime copy");
+    expect(await usersOf() === 1, "data intact after the update");
+    stopCluster({ layout: l, runtimeDir: path.join(root, "runtime", "18.9-1") });
   });
 
   // ------------------------------------------------------------------------------------------------ uninstall / reinstall

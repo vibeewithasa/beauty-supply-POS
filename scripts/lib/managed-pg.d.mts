@@ -35,3 +35,5 @@ export function secureDirectory(dir: string): void;
 export function readBundleManifest(bundleDir: string): { version: string; major: number };
 export function connectionUrl(o: { port: number; user: string; password: string; database?: string }): string;
 export function adminUrl(o: { port: number; password: string; database?: string }): string;
+export function compareVersions(a: string, b: string): number;
+export function updateRuntimeIfNewer(o: { layout: Layout; manifest: Manifest; bundleDir: string }): Promise<{ action: "none" | "updated" | "refused" | "rolled-back"; reason?: string; from?: string; to?: string }>;
