@@ -156,3 +156,5 @@ release/
 *.summary.json
 backup.log
 task.log
+
+vendor/
