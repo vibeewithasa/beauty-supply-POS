@@ -26,7 +26,9 @@
 
     /* Colores de Frontera e Input */
     --border: 0 0% 90%;
-    --input: 0 0% 96%;
+    /* The edge of an editable field (border-input). It was 96% light on a white page (1.02:1: invisible); a control
+       boundary needs 3:1 (WCAG 1.4.11). This one is 4.4:1 on white and 4.1:1 on the grey cards. */
+    --input: 160 6% 46%;
     --muted: 0 0% 94%;
     --muted-foreground: 0 0% 45%;
 
@@ -68,6 +70,20 @@
 
   body {
     @apply bg-background text-foreground font-sans antialiased;
+  }
+
+  /* Native <select>s: the same edge, fill and focus ring as the Input component */
+  select {
+    @apply rounded-md border border-input bg-background outline-none transition-[color,box-shadow];
+  }
+  select:focus-visible {
+    @apply border-ring ring-[3px] ring-ring/50;
+  }
+  select[aria-invalid="true"] {
+    @apply border-destructive ring-[3px] ring-destructive/20;
+  }
+  select:disabled {
+    @apply cursor-not-allowed bg-muted opacity-50;
   }
 
   /* Improved typography for POS */
