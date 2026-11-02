@@ -1,6 +1,6 @@
 {
   "name": "beauty-supply-pos",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "private": true,
   "main": "dist/main/main.cjs",
   "type": "module",
