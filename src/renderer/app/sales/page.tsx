@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { POSLayout } from "@/components/pos-layout";
 import { ReceiptDialog } from "@/components/receipt-dialog";
@@ -20,6 +20,8 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Search, Plus, Minus, Trash2, CreditCard, DollarSign, Printer, AlertCircle, ShoppingCart, FileText } from "lucide-react";
 import { toast } from "sonner";
 import { describeIpcError } from "@/lib/ipc-error";
+import { useCart } from "@/lib/cart-context";
+import { applyCartIssues, checkoutSignature, describeCartIssue, findCartIssues, type CartItem } from "@/lib/cart";
 
 interface User {
   id: number;
@@ -36,15 +38,6 @@ interface Product {
   stock: number;
 }
 
-interface CartItem {
-  productId: number;
-  sku: string;
-  name: string;
-  quantity: number;
-  unitPrice: number;
-  subtotal: number;
-}
-
 interface CashSession {
   id: number;
   openedBy: number;
@@ -53,29 +46,20 @@ interface CashSession {
   openedAt: Date;
 }
 
-interface CompletedSale {
-  id: number;
-  total: string;
-  paymentMethod: "cash" | "card";
-  createdAt: Date | string;
-  itemCount: number | null;
-}
-
 const METHOD_LABEL = { cash: "Efectivo", card: "Tarjeta" } as const;
 const REFRESH_CODES = /^(STOCK_INSUFICIENTE|PRECIO_DESACTUALIZADO|SUBTOTAL_INCORRECTO|TOTAL_INCORRECTO|PRODUCTO_NO_DISPONIBLE|PRODUCTO_NO_ENCONTRADO)$/;
 const money = (v: string | number) => `$${Number(v).toFixed(2)}`;
-const newOperationId = () => (globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : `op-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`);
 
 export default function SalesPage() {
   const [user, setUser] = useState<User | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
-  const [cart, setCart] = useState<CartItem[]>([]);
+  // The cart, the sale just completed and the in-flight payment live above the routes (lib/cart-context): leaving this
+  // screen for another module and coming back finds them as they were.
+  const { items: cart, setItems: setCart, completed, setCompleted, paying, beginPayment, endPayment, isCurrent, operationFor, releaseOperation } = useCart();
   const [searchTerm, setSearchTerm] = useState("");
   const [showPaymentDialog, setShowPaymentDialog] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "card">("cash");
-  const [paying, setPaying] = useState(false);
   const [received, setReceived] = useState(""); // cash handed over by the customer: a change aid only, never stored
-  const [completed, setCompleted] = useState<CompletedSale | null>(null);
   const [receiptSaleId, setReceiptSaleId] = useState<number | null>(null);
   const [printState, setPrintState] = useState<{ kind: "idle" | "printing" | "printed" | "cancelled" | "failed"; message: string }>({ kind: "idle", message: "" });
   const [cashSession, setCashSession] = useState<CashSession | null>(null);
@@ -86,9 +70,6 @@ export default function SalesPage() {
   const [confirmClear, setConfirmClear] = useState(false);
   const [itemToRemove, setItemToRemove] = useState<number | null>(null);
   const navigate = useNavigate();
-
-  const payingRef = useRef(false); // synchronous guard: state updates are too late to stop a double click
-  const operationIdRef = useRef<string | null>(null);
 
   const focusSearch = useCallback(() => {
     // after the DOM settles (dialogs restore focus to their trigger when they close)
@@ -129,11 +110,6 @@ export default function SalesPage() {
     if (!loading) document.getElementById("pos-search")?.focus();
   }, [loading]);
 
-  // a different cart or payment method is a different checkout attempt: it must not replay an earlier operation id
-  useEffect(() => {
-    operationIdRef.current = null;
-  }, [cart, paymentMethod]);
-
   const term = searchTerm.trim().toLowerCase();
   const filteredProducts = useMemo(
     () =>
@@ -144,6 +120,13 @@ export default function SalesPage() {
         : [],
     [products, term]
   );
+
+  // What the cart remembers against the catalog just read: coming back from another module, prices or stock may have moved.
+  const issues = useMemo(() => findCartIssues(cart, products), [cart, products]);
+  const acceptCatalogChanges = () => {
+    setCart(applyCartIssues(cart, products));
+    focusSearch();
+  };
 
   const total = cart.reduce((sum, item) => sum + item.subtotal, 0);
   const totalCents = Math.round(total * 100);
@@ -252,17 +235,17 @@ export default function SalesPage() {
       toast.error("Debes abrir la caja antes de realizar ventas");
       return;
     }
-    if (cart.length === 0) return;
+    if (cart.length === 0 || issues.length > 0 || paying) return;
     setReceived("");
     setShowPaymentDialog(true);
   };
 
   const handleCompletePayment = async () => {
-    if (!user || !cashSession || cart.length === 0) return;
-    if (payingRef.current) return; // double click / double Enter
-    payingRef.current = true;
-    setPaying(true);
-    const operationId = (operationIdRef.current ??= newOperationId());
+    if (!user || !cashSession || cart.length === 0 || issues.length > 0) return;
+    const token = beginPayment();
+    if (token === null) return; // double click / double Enter, or a payment still running from before leaving this screen
+    // The same cart and method keep the same operation id, here and after visiting another module: a retry cannot create a second sale.
+    const operationId = operationFor(checkoutSignature(cart, paymentMethod, cashSession.id));
     try {
       const sale = await window.api.sales.create({
         items: cart.map((item) => ({ productId: item.productId, quantity: item.quantity, unitPrice: item.unitPrice, subtotal: item.subtotal })),
@@ -278,6 +261,7 @@ export default function SalesPage() {
       } catch (e) {
         console.error("Could not read back the sale:", e);
       }
+      if (!isCurrent(token)) return; // the session ended meanwhile: this cart is nobody's now
       const row = detail?.sale ?? sale;
       setCompleted({
         id: sale.id,
@@ -287,7 +271,7 @@ export default function SalesPage() {
         itemCount: detail ? detail.items.reduce((s: number, i: any) => s + i.quantity, 0) : null,
       });
       setPrintState({ kind: "idle", message: "" });
-      operationIdRef.current = null;
+      releaseOperation();
       setShowPaymentDialog(false);
       setCart([]);
       setSearchTerm("");
@@ -298,12 +282,13 @@ export default function SalesPage() {
       }
     } catch (error) {
       console.error("Sale error:", error);
+      if (!isCurrent(token)) return;
       const { code, message } = describeIpcError(error, "Error al completar la venta");
       toast.error(message);
       setShowPaymentDialog(false);
       // A definitive rejection means no sale exists: the next attempt is a new operation. An unknown outcome
       // (internal error) keeps the id, so retrying the same cart can only ever return the same sale.
-      if (code && code !== "ERROR_INTERNO") operationIdRef.current = null;
+      if (code && code !== "ERROR_INTERNO") releaseOperation();
       try {
         // Stale stock/prices/catalog or a closed cash register: resynchronize what the screen shows (the cart is kept).
         if (code && REFRESH_CODES.test(code)) {
@@ -325,8 +310,7 @@ export default function SalesPage() {
         console.error("Refresh after rejected sale failed:", refreshError);
       }
     } finally {
-      payingRef.current = false;
-      setPaying(false);
+      endPayment(token);
     }
   };
 
@@ -462,6 +446,19 @@ export default function SalesPage() {
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {cart.length > 0 && issues.length > 0 && (
+                <div role="alert" data-testid="cart-issues" className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-amber-900">
+                  <p className="font-semibold text-sm">El catálogo cambió desde que armaste este carrito. Revisa los cambios antes de cobrar:</p>
+                  <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">
+                    {issues.map((issue) => (
+                      <li key={`${issue.kind}-${issue.productId}`}>{describeCartIssue(issue)}</li>
+                    ))}
+                  </ul>
+                  <Button onClick={acceptCatalogChanges} className="mt-3 h-10">
+                    Actualizar carrito
+                  </Button>
+                </div>
+              )}
               {cart.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
                   <ShoppingCart size={56} className="mb-4 opacity-20" />
@@ -525,11 +522,16 @@ export default function SalesPage() {
                     {money(total)}
                   </span>
                 </div>
+                {paying && !showPaymentDialog && (
+                  <p role="status" className="text-sm text-muted-foreground">
+                    Hay un cobro en proceso. Espera a que termine antes de cobrar de nuevo.
+                  </p>
+                )}
                 <div className="flex gap-3">
                   <Button onClick={() => setConfirmClear(true)} variant="outline" className="flex-1 h-12">
                     Limpiar
                   </Button>
-                  <Button onClick={handleStartPayment} className="btn-pos-success flex-1 h-12 text-lg gap-2">
+                  <Button onClick={handleStartPayment} disabled={issues.length > 0 || paying} className="btn-pos-success flex-1 h-12 text-lg gap-2">
                     <DollarSign size={20} />
                     Pagar
                   </Button>
