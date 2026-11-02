@@ -61,8 +61,8 @@ function neutralEnv(extra = {}) {
   return { ...env, ...extra };
 }
 const launched = [];
-async function launchInstalled(userData, extraArgs = []) {
-  const app = await _electron.launch({ executablePath: exe, args: ["--user-data-dir=" + userData, ...extraArgs], cwd: neutralCwd, env: neutralEnv(), timeout: 90000 });
+async function launchInstalled(userData, extraArgs = [], executable = exe) {
+  const app = await _electron.launch({ executablePath: executable, args: ["--user-data-dir=" + userData, ...extraArgs], cwd: neutralCwd, env: neutralEnv(), timeout: 90000 });
   launched.push(app);
   const mainLog = [];
   const proc = app.process();
@@ -85,7 +85,12 @@ const { results, rec, test } = createRecorder("installer-app", artifacts, () => 
 const userData = path.join(scratch, "userdata");
 const userData2 = path.join(scratch, "userdata-clean");
 const userData3 = path.join(scratch, "userdata-external");
-for (const d of [userData, userData2, userData3]) fs.mkdirSync(d);
+const userData4 = path.join(scratch, "userdata-upgrade");
+for (const d of [userData, userData2, userData3, userData4]) fs.mkdirSync(d);
+// the previous release, to rehearse an in-place upgrade (UPGRADE_FROM overrides; the file is a release artifact, not in Git)
+const OLD_INSTALLER = process.env.UPGRADE_FROM || path.join(ROOT, "release", "Estética Leal POS Setup 0.8.0.exe");
+const oldInstallDir = path.join(scratch, "old", "Estetica Leal POS");
+const oldExe = path.join(oldInstallDir, "Beauty POS.exe");
 let page, L, db, fatal, extRoot, extCleanup;
 
 async function secretsFrom(l, dataDir) {
@@ -94,13 +99,13 @@ async function secretsFrom(l, dataDir) {
   const dec = (blob) => l.app.evaluate(({ safeStorage }, b) => safeStorage.decryptString(Buffer.from(b, "base64")), blob);
   return { cfg, runtimePassword: await dec(cfg.passwordEncrypted), adminPassword: await dec(adm.passwordEncrypted) };
 }
-async function waitForWizardRelaunch(dataDir, l) {
+async function waitForWizardRelaunch(dataDir, l, dir = installDir) {
   const exited = new Promise((resolve) => l.app.process().once("exit", resolve));
   await Promise.race([exited, sleep(30000)]);
-  expect(await waitFor(async () => processesFrom(installDir, "Beauty POS.exe") > 0, 20000), "the application relaunched itself after the installation");
+  expect(await waitFor(async () => processesFrom(dir, "Beauty POS.exe") > 0, 20000), "the application relaunched itself after the installation");
   const m = () => { try { return readManifest(layoutFor(path.join(dataDir, "managed"))); } catch { return null; } };
   expect(await waitFor(async () => { const mm = m(); return mm && mm.state === "ready" && !(await isPortFree(mm.postgres.port)); }, 40000), "the relaunched application started the dedicated PostgreSQL");
-  stopProcessesFrom(installDir); // the relaunched app cannot be attached to: stop it (its PostgreSQL is stopped below by the test)
+  stopProcessesFrom(dir); // the relaunched app cannot be attached to: stop it (its PostgreSQL is stopped below by the test)
   await sleep(1500);
   const lay = layoutFor(path.join(dataDir, "managed"));
   const rt = path.join(lay.root, m().postgres.runtimeDir);
@@ -425,6 +430,68 @@ try {
     expect(!fs.existsSync(path.join(userData3, "managed")), "no managed instance was created next to an external connection");
     await closeApp(L);
   });
+
+  // ------------------------------------------------------------------------------------------------ upgrading over the previous release
+  // The NSIS step only replaces the application files (same appId, per-user); the person's data lives in %LOCALAPPDATA%\Estetica Leal POS and is
+  // never part of the installer. This rehearses what the new files do with the data the old ones left: the previous release's payload creates
+  // an instance and a sale, then THIS release's payload starts on the very same folder. (Running the NSIS installer itself is a manual step.)
+  await test("APP-14.the_new_release_starts_on_the_data_of_the_previous_one_without_a_wizard_a_new_instance_or_a_migration_and_keeps_sales_and_users", "e2e", async () => {
+    if (!fs.existsSync(OLD_INSTALLER)) { rec("APP-14.skipped", "SKIP", "the previous installer is not at " + OLD_INSTALLER + " (set UPGRADE_FROM)", { kind: "e2e" }); return; }
+    const x = spawnSync(SEVEN_ZIP, ["x", OLD_INSTALLER, "-o" + oldInstallDir, "-y"], { encoding: "utf8", maxBuffer: 1 << 26 });
+    expect(fs.existsSync(oldExe), "previous release extracted (7za exit " + x.status + ")");
+    const oldVersion = /Setup (\d+\.\d+\.\d+)/.exec(path.basename(OLD_INSTALLER))?.[1];
+    expect(oldVersion && oldVersion !== pkg.version, "a different release: " + oldVersion + " -> " + pkg.version);
+    const counts = async (cfg, adminPassword) => {
+      const c = new pg.Client({ connectionString: connectionUrl({ port: cfg.port, user: "pos_cluster_admin", password: adminPassword, database: "beauty_pos_demo" }) });
+      await c.connect();
+      try {
+        return (await c.query("select (select count(*) from sales)::int sales, (select count(*) from users)::int users, (select count(*) from products)::int products, (select count(*) from drizzle.__drizzle_migrations)::int migrations")).rows[0];
+      } finally { await c.end(); }
+    };
+    // 1. the previous release installs the demonstration through its own wizard
+    L = await launchInstalled(userData4, [], oldExe);
+    page = L.page;
+    await page.locator("#btn-install").waitFor({ timeout: 30000 });
+    for (const [id, v] of [["#admin-pin-d", ADMIN_PIN], ["#admin-pin-d2", ADMIN_PIN], ["#vendor-pin", VENDOR_PIN], ["#vendor-pin2", VENDOR_PIN]]) await page.locator(id).fill(v);
+    await page.locator("#btn-install").click();
+    await page.getByText("Listo. Estética Leal POS se reiniciará para empezar.").waitFor({ timeout: 180000 });
+    await waitForWizardRelaunch(userData4, L, oldInstallDir);
+    // 2. ...and makes a sale with it
+    L = await launchInstalled(userData4, [], oldExe);
+    page = L.page;
+    await page.getByText("Ingresa tu PIN para comenzar").waitFor({ timeout: 60000 });
+    await ui.login(page, ADMIN_PIN);
+    await page.waitForURL(/#\/dashboard$/, { timeout: 15000 });
+    await ui.openCash(page, 20);
+    await ui.sell(page, { query: productBySku("DEMO-SH-500").barcode, name: "Shampoo Hidratante", qty: 1, method: "cash" });
+    const s0 = await secretsFrom(L, userData4);
+    const before = readManifest(layoutFor(path.join(userData4, "managed")));
+    const was = await counts(s0.cfg, s0.adminPassword);
+    expect(was.sales === T.sales + 1 && was.users === 2, "the previous release left its data: " + JSON.stringify(was));
+    await closeApp(L);
+    expect(await waitFor(async () => processesFrom(path.join(userData4, "managed"), "postgres.exe") === 0, 30000), "PostgreSQL stopped with the previous release");
+    // 3. this release starts on the same folder
+    L = await launchInstalled(userData4);
+    page = L.page;
+    await page.getByText("Ingresa tu PIN para comenzar").waitFor({ timeout: 60000 });
+    expect(await page.locator("#btn-install").count() === 0, "no wizard: the installation is recognised");
+    const after = readManifest(layoutFor(path.join(userData4, "managed")));
+    expect(after.installId === before.installId && after.postgres.runtimeDir === before.postgres.runtimeDir, "the same instance (installId and runtime), no second one");
+    expect(fs.readdirSync(path.join(userData4, "managed", "runtime")).length === 1, "one runtime, one cluster: " + fs.readdirSync(path.join(userData4, "managed")).join(","));
+    const s1 = await secretsFrom(L, userData4);
+    expect(s1.runtimePassword === s0.runtimePassword && s1.adminPassword === s0.adminPassword, "the protected credentials were not regenerated");
+    const now = await counts(s1.cfg, s1.adminPassword);
+    expect(JSON.stringify(now) === JSON.stringify(was), "sales, users, products and migrations are exactly as the previous release left them: " + JSON.stringify(now));
+    await ui.login(page, ADMIN_PIN);
+    await page.waitForURL(/#\/dashboard$/, { timeout: 15000 });
+    await ui.nav(page, "Historial");
+    await page.getByTestId("history-summary").waitFor({ timeout: 10000 });
+    await ui.nav(page, "Vender");
+    await page.getByText("Carrito (0 artículos)").waitFor();
+    expect(L.consoleErrors.filter((e) => !/favicon/i.test(e)).length === 0, "no console error: " + JSON.stringify(L.consoleErrors));
+    await closeApp(L);
+    expect(await waitFor(async () => processesFrom(path.join(userData4, "managed"), "postgres.exe") === 0, 30000), "PostgreSQL stopped with this release");
+  });
 } catch (e) {
   fatal = e;
   rec("suite.unexpected_error", "FAIL", scrub(String(e.stack || e)).split("\n").slice(0, 3).join(" | ").slice(0, 400), { kind: "integration" });
@@ -432,7 +499,7 @@ try {
   for (const app of launched) { try { await app.close(); } catch { /* already closed */ } }
   try { await db?.end(); } catch { /* ignore */ }
   extCleanup?.();
-  for (const d of [userData, userData2, userData3]) {
+  for (const d of [userData, userData2, userData3, userData4]) {
     try {
       const lay = layoutFor(path.join(d, "managed"));
       const m = readManifest(lay);
