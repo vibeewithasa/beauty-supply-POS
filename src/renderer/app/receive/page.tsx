@@ -240,7 +240,7 @@ export default function ReceivePage() {
                     <label htmlFor="mv-qty" className="text-sm font-semibold block mb-1">
                       {type === "ADJUST" ? "Diferencia (con signo)" : "Cantidad"}
                     </label>
-                    <Input id="mv-qty" inputMode="numeric" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
+                    <Input id="mv-qty" aria-invalid={quantityError ? true : undefined} inputMode="numeric" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
                     {quantityError && <p className="text-xs text-red-600 mt-1">{quantityError}</p>}
                     {resulting !== null && (
                       <p className={`text-sm mt-1 ${resulting < 0 ? "text-red-600" : ""}`}>

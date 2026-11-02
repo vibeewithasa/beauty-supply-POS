@@ -1,6 +1,6 @@
 {
   "name": "beauty-supply-pos",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "private": true,
   "main": "dist/main/main.cjs",
   "type": "module",
@@ -34,6 +34,7 @@
     "test:history": "node e2e/run.mjs history",
     "test:receipts": "node e2e/run.mjs receipts",
     "test:ux": "node e2e/run.mjs ux",
+    "test:fields": "node e2e/run.mjs fields",
     "test:safety": "node e2e/run.mjs safety",
     "test:cash": "node e2e/run.mjs cash",
     "test:refunds": "node e2e/run.mjs refunds",

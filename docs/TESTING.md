@@ -30,9 +30,10 @@ database is ever written to, overwritten or dropped.
 | `npm run test:hardening` | sanitized errors, user administration, login limiter | yes |
 | `npm run test:pin` | scrypt PINs, legacy upgrade, PIN uniqueness across salts, seed script, users screen | yes |
 | `npm run test:screens` | products, receive (IN/OUT/ADJUST), price change + stale detection, returns (partial/over/pending), reports, vendor isolation, driven through the real UI and verified in PostgreSQL | yes |
-| `npm run test:cart` | cart confirmations, no toast, double-submit and idempotent checkout, completed-sale modal, search/scanner simulation | yes |
+| `npm run test:cart` | cart confirmations, no toast, double-submit and idempotent checkout, completed-sale modal, search/scanner simulation; since 0.8.1 also the cart surviving Caja/Historial/Devoluciones (vendor and administrator), clearing once on a sale, logout / user change / expired session isolation, stale price-stock-availability, a rejected, an uncertain (answer lost) and an in-flight payment | yes |
 | `npm run test:history` | sales history: pagination beyond 100, folio/date/method filters, sold-as-recorded names, returns, vendor isolation, restart | yes |
 | `npm run test:receipts` | ticket content, escaping, settings, logo, 80/58 mm PDF output, cancel/failure/retry, permissions | yes |
+| `npm run test:fields` | every editable field of the real screens (sales, payment, cash dialogs, returns, inventory, users, settings, history, stock, receive), measured in the window: border / fill / text / placeholder contrast against what is behind the field, focus ring, invalid and disabled looks, at 1024x768 / 1366x768 / 1920x1080 with screenshots; `FIELDS_PHASE=before` only records | yes |
 | `npm run test:ux` | every screen at 1024x768 / 1366x768 / 1920x1080: overflow, clipped tables, dialogs in viewport, labels, receipt legibility; screenshots in `e2e-artifacts` | yes |
 | `npm run test:packaged` | launches the packaged exe (`npm run package:dir` first) against a throwaway DB: window, login, modules, sale/cash/return/report, CSP, shell hardening, no credentials in the asar, config sources, close/reopen | yes |
 | `npm run test:safety` | legacy sales channels visibility, checkout idempotency (lines compared), connection loss and recovery, safe errors | yes |

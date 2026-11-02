@@ -122,3 +122,16 @@ describes the early MVP and is intentionally not edited here.
 3. (done) Screens for product/inventory/price management, returns and reports.
 4. Decide the pending product questions. 5. (done) Dependency upgrade + audit. 6. (done) Backup/restore procedure with a second copy. 7a. (done) Protected credentials and first-run setup.
 7. (done) Electron shell hardening. Still open: code signing certificate and a trusted update channel.
+
+## Version 0.8.1: visible fields and a cart that survives navigation
+
+* **Fields.** The edge of every editable field (`border-input`) was 96 % light on a white page: 1.02:1 to 1.25:1, so Devoluciones (sale number, quantity to return, reason), the product search, the payment and cash dialogs,
+  inventory, users, settings and the native selects were drawn but invisible. `--input` is now a green-grey with 4.4:1 on white and 4.1:1 on the grey cards (WCAG asks 3:1); fields have a white fill, disabled ones a muted fill, native
+  `<select>` share the edge and focus ring. The `aria-invalid:` variant the shared fields already used exists only in Tailwind 4: it is declared for Tailwind 3 so the error state now paints (returns and receive mark their invalid field).
+  The cart quantity between the - and + buttons is untouched. Measured by `npm run test:fields` (45 fields before: all under 1.25:1; after: all at or above 4.07:1).
+* **Cart.** The cart lives in `lib/cart-context.tsx` above the routes: memory only, no PIN or session data, one per login session. Login, logout, an expired session and a different authenticated user all start empty.
+  A checkout keeps its operation id with the exact cart, method and cash session; a payment still running when the operator leaves is tracked above the page, blocks a second one and its result is shown on return.
+  Coming back, prices, stock and availability are compared with the catalog just read; differences are listed, nothing changes silently and payment waits for «Actualizar carrito». The Vender link shows the number of lines.
+  Not done by design: no persistence to disk (restarting the application empties the cart), no saved or suspended carts. A payment REJECTED with a stale-stock or price code still resynchronizes the cart as in 0.8.0 (that path was not touched).
+* **Upgrading from 0.8.0.** No migration, no new instance. `test:installer-app` APP-14 starts the 0.8.1 payload on a folder created and used by the 0.8.0 payload and checks: no wizard, same install id and runtime, same credentials,
+  same sales, users, products and migrations. Running the NSIS installer over an installed 0.8.0 is NOT rehearsed here (manual list in `docs/DEMO_CHECKLIST.md`).

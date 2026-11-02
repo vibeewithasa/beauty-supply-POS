@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
 import brandIcon from "@/assets/estetica-leal-icon.png";
 import { describeIpcError } from "@/lib/ipc-error";
+import { useCart } from "@/lib/cart-context";
 
 // 4-digit PINs of existing accounts still work; new PINs have 6 to 8 digits (enforced by the backend).
 const MIN_PIN = 4;
@@ -22,6 +23,7 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const cart = useCart();
 
   const handlePinInput = (digit: string) => {
     if (pinRef.current.length < MAX_PIN) {
@@ -50,6 +52,7 @@ export default function LoginPage() {
 
       if (user) {
         sessionStorage.setItem("user", JSON.stringify(user));
+        cart.reset(); // a new login never inherits a cart
         toast.success(`Bienvenido ${user.name}`);
         navigate(user.role === "admin" ? "/dashboard" : "/sales");
       } else {

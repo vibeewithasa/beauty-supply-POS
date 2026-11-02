@@ -1,6 +1,6 @@
 # Instalador autónomo de Estética Leal POS (Sprint 07.1)
 
-Objetivo: que **un solo archivo** (`Estética Leal POS Setup 0.8.0.exe`) deje la aplicación funcionando en una laptop con Windows, **sin instalar ni administrar PostgreSQL a mano**,
+Objetivo: que **un solo archivo** (`Estética Leal POS Setup 0.8.1.exe`) deje la aplicación funcionando en una laptop con Windows, **sin instalar ni administrar PostgreSQL a mano**,
 sin Node.js, sin Internet y sin repositorio. Este documento define la arquitectura y los motivos; la guía para quien instala está en `docs/DEMO_INSTALL_LAPTOP.md`.
 
 > Estado honesto: lo descrito aquí como "verificado" se probó con **PostgreSQL real, aislado, en carpetas temporales** de la PC de desarrollo (sin instalar servicios) y con el

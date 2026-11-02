@@ -72,11 +72,11 @@ The full procedure is in `docs/PILOT_CHECKLIST.md`.
   owner's Windows was not authorized. Clean install, first start from an installed copy, Start Menu entry, uninstall and "PostgreSQL data preserved after uninstall" are **pending**
   (run them in a VM or a spare PC). The NSIS configuration is one-click, per-user. Installers are never published or distributed from this repository.
 
-## Self-contained installer (Sprint 07.1, version 0.8.0)
+## Self-contained installer (Sprint 07.1, version 0.8.0; 0.8.1 is the same installer with two screen fixes)
 
 * `npm run package` now also carries a **PostgreSQL 18 package** (official EnterpriseDB binaries, pinned by SHA-256 in `scripts/postgresql-pin.json`, pruned, with the Visual C++ runtime DLLs
   next to them and a per-file hash manifest) as `resources\postgresql`. The package is fetched from the Internet **at build time only**, never when installing; `vendor/` is git-ignored (no binaries in Git).
-* The installer is `release/Estética Leal POS Setup 0.8.0.exe` (NSIS, one-click, per-user, no administrator, `appId` unchanged so 0.7.0 installs update in place). It is about 142 MiB.
+* The installer is `release/Estética Leal POS Setup 0.8.1.exe` (NSIS, one-click, per-user, no administrator, `appId` unchanged so 0.7.0 installs update in place). It is about 142 MiB.
 * With nothing configured, the first start opens the **installation wizard** (demonstration or clean) that creates a dedicated PostgreSQL instance under `%LOCALAPPDATA%\Estetica Leal POS`; an existing
   `config.json` (0.7.0 or an explicit external PostgreSQL) is respected and never triggers it. Details and decisions: `docs/SELF_CONTAINED_INSTALLER.md`; laptop guide: `docs/DEMO_INSTALL_LAPTOP.md`.
 * `resources\tools` also carries `Mantenimiento.cmd` (the maintenance window) and the 0.7.0 `Preparar-Base-Demo.cmd/.ps1` (for a PostgreSQL the operator installed separately).

@@ -1,6 +1,6 @@
-# Estética Leal POS: instalación en una laptop con Windows (instalador autónomo 0.8.0)
+# Estética Leal POS: instalación en una laptop con Windows (instalador autónomo 0.8.1)
 
-Un solo archivo, **`Estética Leal POS Setup 0.8.0.exe`**, deja la aplicación lista para usar o para presentar. **No hay que instalar PostgreSQL, ni Node.js, ni correr scripts.**
+Un solo archivo, **`Estética Leal POS Setup 0.8.1.exe`**, deja la aplicación lista para usar o para presentar. **No hay que instalar PostgreSQL, ni Node.js, ni correr scripts.**
 Funciona sin Internet. Arquitectura y motivos: `docs/SELF_CONTAINED_INSTALLER.md`.
 
 ## Qué se verificó y qué no (leer antes de la presentación)
@@ -17,7 +17,7 @@ Funciona sin Internet. Arquitectura y motivos: `docs/SELF_CONTAINED_INSTALLER.md
 | Cosa | Detalle |
 |---|---|
 | Laptop | Windows 10 (1809 o superior) u 11, de 64 bits, con **2 GB libres** como mínimo (la aplicación ocupa unos 500 MB y la base propia unos 100 MB al inicio). Sirve Windows Home. |
-| Instalador | `Estética Leal POS Setup 0.8.0.exe`, **148 429 007 bytes (141,6 MiB)**. SHA-256 `1974529744d97b8fcb5f5be4d74655cfc538512cca7adb1abb6d17681e84bbd1` (se vuelve a calcular al generar uno nuevo). Se genera con `npm run package` y queda en `release\`. No está en el repositorio ni en GitHub. |
+| Instalador | `Estética Leal POS Setup 0.8.1.exe`, **148 430 341 bytes (141,6 MiB)**. SHA-256 `6c88e8d53019152555ccd1bc82bd481e8e94b7b1874a0e14126313cc6d1e3f5f` (se vuelve a calcular al generar uno nuevo). Se genera con `npm run package` y queda en `release\`. No está en el repositorio ni en GitHub. |
 | Permisos | Una cuenta normal de Windows. **No pide administrador** y no instala servicios. |
 | Contraseñas | Solo los PIN que tú eliges durante la instalación. Las contraseñas de la base las genera el sistema, son aleatorias y se guardan protegidas por Windows. |
 
@@ -26,7 +26,7 @@ Funciona sin Internet. Arquitectura y motivos: `docs/SELF_CONTAINED_INSTALLER.md
 Cópialo a la laptop con una memoria USB. Comprueba que no se dañó (PowerShell):
 
 ```powershell
-Get-FileHash "$env:USERPROFILE\Downloads\Estética Leal POS Setup 0.8.0.exe" -Algorithm SHA256
+Get-FileHash "$env:USERPROFILE\Downloads\Estética Leal POS Setup 0.8.1.exe" -Algorithm SHA256
 ```
 
 El resultado debe ser el SHA-256 de la tabla.
@@ -110,7 +110,7 @@ Si trae cambios de estructura, la aplicación avisa y se aplican desde Mantenimi
 ## 11. Para quien genera el instalador (PC de desarrollo)
 
 ```bash
-npm run package            # descarga (una vez) y verifica PostgreSQL, compila y genera release\Estética Leal POS Setup 0.8.0.exe
+npm run package            # descarga (una vez) y verifica PostgreSQL, compila y genera release\Estética Leal POS Setup 0.8.1.exe
 npm run test:installer     # 29 comprobaciones del aprovisionamiento contra PostgreSQL real, en carpetas temporales
 npm run test:installer-app # 14 comprobaciones: extrae el instalador y maneja el asistente con la interfaz real
 npm run test:demo          # ensayo con un PostgreSQL externo (ruta avanzada)

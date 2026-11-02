@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import brandIcon from "@/assets/estetica-leal-icon.png";
+import { useCart } from "@/lib/cart-context";
 import {
   ShoppingCart,
   Plus,
@@ -64,6 +65,7 @@ export function POSNavbar() {
   const pathname = location.pathname;
   const navigate = useNavigate();
   const [user, setUser] = useState<User | null>(null);
+  const cart = useCart();
 
   useEffect(() => {
     const userStr = sessionStorage.getItem("user");
@@ -80,6 +82,7 @@ export function POSNavbar() {
     }
     sessionStorage.removeItem("user");
     sessionStorage.removeItem("cashBoxOpen");
+    cart.reset();
     navigate("/");
   };
 
@@ -113,6 +116,12 @@ export function POSNavbar() {
                   <Button variant={isActive(link.href) ? "secondary" : "ghost"} size="sm" className="gap-1.5 h-10 px-2.5 whitespace-nowrap">
                     <IconComponent size={18} className="hidden xl:block" />
                     {link.label}
+                    {/* aria-hidden: the link keeps its plain name ("Vender"); the count is a glance aid for a cart left open */}
+                    {link.href === "/sales" && cart.items.length > 0 && (
+                      <span aria-hidden="true" data-testid="nav-cart-count" className="ml-0.5 min-w-5 rounded-full bg-secondary px-1.5 text-center text-xs font-bold leading-5 text-secondary-foreground">
+                        {cart.items.length}
+                      </span>
+                    )}
                   </Button>
                 </Link>
               );

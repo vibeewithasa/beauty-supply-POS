@@ -354,6 +354,7 @@ export default function ReturnsPage() {
               <label htmlFor="rt-sale" className="text-sm font-semibold block mb-1">Número de venta</label>
               <Input
                 id="rt-sale"
+                aria-invalid={lookupError ? true : undefined}
                 inputMode="numeric"
                 value={saleIdText}
                 onChange={(e) => setSaleIdText(e.target.value)}
@@ -433,6 +434,7 @@ export default function ReturnsPage() {
                         <>
                           <Input
                             aria-label={`Cantidad a devolver de ${line.productName ?? line.productId}`}
+                            aria-invalid={error ? true : undefined}
                             inputMode="numeric"
                             className="w-24 h-9"
                             value={qty[line.id] ?? ""}

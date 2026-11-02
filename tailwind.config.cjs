@@ -4,6 +4,8 @@ module.exports = {
   content: ["./index.html", "./src/renderer/**/*.{ts,tsx}"],
   theme: {
     extend: {
+      // the shared fields style their error state with aria-invalid: (written for Tailwind 4); in v3 it must be declared
+      aria: { invalid: 'invalid="true"' },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",

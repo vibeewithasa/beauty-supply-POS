@@ -13,6 +13,7 @@ import ReceivePage from "./app/receive/page";
 import HistoryPage from "./app/history/page";
 import CashHistoryPage from "./app/cash-history/page";
 import SettingsPage from "./app/settings/page";
+import { CartProvider, useCart } from "./lib/cart-context";
 
 interface User {
   id: number;
@@ -32,6 +33,7 @@ function ProtectedRoute({
   const [loading, setLoading] = useState(true);
 
   const { pathname } = useLocation();
+  const { bindOwner } = useCart();
 
   // The main process is the authority: sessionStorage is only a UI cache. It is asked on every
   // navigation because Routes reuses this component instance between routes.
@@ -47,6 +49,8 @@ function ProtectedRoute({
         } else {
           sessionStorage.removeItem("user");
         }
+        // the cart belongs to this identity: another user (or no session) never sees it
+        bindOwner(me ? me.id : null);
         setUser(me);
       })
       .catch(() => {
@@ -62,7 +66,7 @@ function ProtectedRoute({
     return () => {
       cancelled = true;
     };
-  }, [pathname]);
+  }, [pathname, bindOwner]);
 
   if (loading) {
     return (
@@ -87,20 +91,22 @@ function ProtectedRoute({
 // (event raised by the preload only for "Sesión no válida", never for role or other errors).
 function SessionWatcher() {
   const navigate = useNavigate();
+  const { reset } = useCart();
   useEffect(() => {
     const onExpired = () => {
       sessionStorage.removeItem("user");
+      reset();
       navigate("/", { replace: true });
     };
     window.addEventListener("pos:session-expired", onExpired);
     return () => window.removeEventListener("pos:session-expired", onExpired);
-  }, [navigate]);
+  }, [navigate, reset]);
   return null;
 }
 
 function App() {
   return (
-    <>
+    <CartProvider>
       <SessionWatcher />
       <Routes>
       <Route path="/" element={<LoginPage />} />
@@ -208,7 +214,7 @@ function App() {
       {/* Fallback */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
-    </>
+    </CartProvider>
   );
 }
 

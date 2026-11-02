@@ -60,6 +60,7 @@ Orden recomendado, con el resultado esperado. Anotar fecha y resultado. **Mientr
 9. **(manual, opcional) Impresora:** una impresión de ticket (80 mm o 58 mm) y de comprobante de devolución en la impresora que se vaya a usar; sin impresora, la vista previa funciona.
 10. **(manual, opcional) Lector de código de barras:** escanear un producto con código; los de la demostración tienen códigos internos (prefijo 20).
 11. **(manual) Windows Defender / antivirus:** confirmar que no pone en cuarentena el instalador, la aplicación ni `postgres.exe` (no están firmados). Si lo hace, añadir una excepción para `%LOCALAPPDATA%\Estetica Leal POS` y la carpeta de la aplicación.
+12. **(manual, 0.8.1) Actualizar encima de la 0.8.0:** con la 0.8.0 instalada y con ventas hechas, ejecutar `Estética Leal POS Setup 0.8.1.exe`. Esperado: no aparece el asistente, se entra con los mismos PIN, las ventas y usuarios siguen, no se crea otra carpeta de datos. Probar además: agregar productos, ir a Caja y volver (el carrito sigue igual), y que "Número de venta" y "Cantidad a devolver" en Devoluciones se ven antes de enfocarlos (también al 125 %/150 % de escala).
 
 ## E. Lo que NO es esta demostración (decirlo antes de que lo pregunten)
 
