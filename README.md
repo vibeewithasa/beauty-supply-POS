@@ -50,11 +50,9 @@ Physical printer, barcode scanner, touch-screen, and card-terminal integration s
 
 ## Requirements
 
-- Windows for the packaged desktop application
-- Node.js and npm compatible with the project's dependencies
-- A locally running PostgreSQL instance
+**Developing from source** requires Windows, Node.js and npm compatible with `package.json`, and a local PostgreSQL instance configured in `.env`.
 
-This project is designed to operate locally. PostgreSQL is a local service and must still be installed and running.
+**Installing the 0.8.1 Windows application** is different: the self-contained installer includes a dedicated PostgreSQL 18 instance and does not require a separate Node.js or PostgreSQL installation. It runs locally and offline after installation. The packaged installer has been rehearsed against an isolated PostgreSQL instance, but installing and uninstalling the NSIS executable on a clean Windows laptop still needs manual verification. See [laptop installation](docs/DEMO_INSTALL_LAPTOP.md).
 
 ## Getting started
 
