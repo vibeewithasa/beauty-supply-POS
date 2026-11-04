@@ -138,12 +138,14 @@ the presentation checklist. `npm run test:installer` and `npm run test:installer
 
 ## Roadmap
 
-- [ ] Complete return and refund workflows
-- [ ] Expand analytics and exportable reports
-- [ ] Improve inventory administration
-- [ ] Add compatible thermal receipt printer support
-- [ ] Implement and validate automated backups
-- [ ] Explore optional multi-location functionality
+Implemented refund settlement, printable commercial receipts, CSV reports, local backup/restore tools, and inventory administration are tracked in [feature status](docs/STATUS.md); they should not be mistaken for future-only work.
+
+- [ ] Validate physical thermal printers (80/58 mm), barcode readers, and touch screens on target hardware
+- [ ] Complete a clean Windows install/uninstall rehearsal on a separate laptop
+- [ ] Decide how to resolve legacy returns with unknown refund status
+- [ ] Decide on discounts, tax handling, and any fiscal-invoicing requirements
+- [ ] Define backup scheduling and external-copy policy for the self-contained installer
+- [ ] Evaluate multi-location support only if operational requirements justify it
 
 ## Project information
 
