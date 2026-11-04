@@ -24,12 +24,18 @@ A desktop point-of-sale (POS) application for beauty supply distributors. Built 
 - Stock adjustments and movement tracking
 - Price-change history and soft-deletion workflows
 
-### Additional modules (in progress)
-- Full and partial returns
-- Sales and inventory reports
-- Administration dashboard
-- User administration and extended inventory management
-- Receipt printer support
+### Returns and refunds
+- Full and partial returns with stock reconciliation
+- Refunds paid in cash or recorded as paid by card, authorized with an active administrator PIN
+- Pending refunds tracked separately from paid and legacy returns; no automatic bank operation
+
+### History, reports, and receipts
+- Searchable sales history, receipt preview and reprinting
+- Commercial (non-fiscal) receipts in 80 mm and 58 mm formats
+- Reports with sales, returns, payment breakdowns, and CSV export
+- Dashboard, user administration, and audited inventory operations
+
+Physical printer, barcode scanner, touch-screen, and card-terminal integration still require hardware validation. See [verified feature status](docs/STATUS.md).
 
 ## Technology stack
 
