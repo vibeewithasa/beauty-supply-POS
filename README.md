@@ -72,12 +72,15 @@ cp .env.example .env
 
 Update `.env` with your local database settings. On Windows PowerShell, you can use `Copy-Item .env.example .env` instead of `cp`.
 
-Apply the database migrations and start the app:
+Inspect the migration plan, then explicitly apply it to the intended development database before starting:
 
 ```bash
 npm run db:migrate
+npm run db:migrate -- --apply --confirm-database=beauty_pos
 npm run dev
 ```
+
+The first command is a **read-only dry run**, not an installation step that updates the schema. The second command is an explicit schema change: review its target first, and follow [the migration and backup procedure](docs/OPERATIONS.md) for any database containing data. Never apply migrations to another database by accident.
 
 For local development, `npm run seed:admin` can provision a sample administrator account. **Never reuse development credentials or default PINs in a real deployment.**
 
