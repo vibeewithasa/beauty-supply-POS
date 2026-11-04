@@ -1,7 +1,8 @@
 # Real status, known risks and distribution requirements
 
-Verified against the code and the automated suites (see `docs/TESTING.md`). The root `README.md` still
-describes the early MVP and is intentionally not edited here.
+The implementation status below is based on the source code and documented automated suites (see `docs/TESTING.md`). The root `README.md` now gives a concise overview of implemented capabilities and remaining hardware-validation work; **this document is the detailed feature and risk inventory**.
+
+Documentation-only corrections do not rerun the test suites. For a new release, perform the checks listed in `docs/TESTING.md` and the laptop-specific manual checks in `docs/DEMO_CHECKLIST.md` before claiming hardware or installation readiness.
 
 ## What works (covered by tests that drive the real window and PostgreSQL)
 
