@@ -93,7 +93,7 @@ For local development, `npm run seed:admin` can provision a sample administrator
 | `npm run package` | Package a Windows installer |
 | `npm run db:generate` | Generate database migrations |
 | `npm run db:check` | Check migration consistency |
-| `npm run db:migrate` | Apply migrations |
+| `npm run db:migrate` | Inspect pending migrations without applying them; use `-- --apply --confirm-database=<name>` only after review |
 | `npm run seed:admin` | Seed a local development administrator |
 | `npm run typecheck` | Run TypeScript checks |
 | `npm run lint` | Run ESLint |
