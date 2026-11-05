@@ -47,11 +47,12 @@ single open one, the operator comes from the session and the administrator from 
   authorization is valid for exactly the one operation that carried the PIN.
 - Only an active administrator can authorize. A wrong PIN, a seller's PIN, an inactive administrator's PIN, an unknown PIN and a malformed
   one all fail with the same `[AUTORIZACION_INVALIDA]` message: nothing to enumerate.
-- Attempts have their **own installation-wide budget** (same limits as the login: 5 failures, 30 s lock, doubling up to 15 min), one for
-  the whole PIN space, not per window or user. Attempts are serialized through a gate, so a burst of parallel requests cannot exceed
-  the budget. A correct PIN is refused while locked (`[AUTORIZACION_BLOQUEADA]`). It is deliberately **not shared with the login counter**:
-  a successful login resets that one, and a signed-in seller could otherwise alternate guesses at the administrator PIN with logins of
-  their own PIN. Only a successful administrator authorization (or a quiet period) resets this counter.
+- Administrator authorization and login share **one installation-wide PIN-attempt budget** (5 failures, a 30 s initial lock,
+  escalating up to 15 min), not separate counters per screen, user or operation. The checks are serialized through the
+  same gate, so parallel requests cannot evade the limit; the state is persisted across restarts.
+  Neither a successful login nor a successful authorization restores failed-attempt credit. A correct PIN is refused
+  while locked (`[AUTORIZACION_BLOQUEADA]`). See `src/backend/auth.ts`, `src/backend/admin-authorization.ts`
+  and `docs/STATUS.md` for the Sprint 06 shared-limiter behavior.
 - The PIN is never stored, logged, echoed or returned. The dialog clears it the moment it is submitted. The audit rows hold ids only.
 - Who is recorded: `refund_settlements.authorized_by` (administrator) and `processed_by` (the signed-in user who attended; the
   same person when an administrator starts and authorizes). `returns.processed_by` keeps who registered the return.
@@ -101,6 +102,7 @@ the history before paying again**, and offers to retry with the same operation k
 - **Cash is taken from the register open at the moment of payment**, which may be a different session from the one of the sale.
 - `returns:getAll`, `returns:getSaleForReturn` and `returns:create` are still open to every signed-in user (unchanged, owner decision pending).
 - Sellers share one administrator PIN budget with every other seller on the installation (a lock affects everyone).
-- The login counter itself can still be reset by a successful login (pre-existing): a signed-in user could alternate guesses at an administrator's PIN
-  *through the login screen*. Longer PINs (6-8 digits are enforced for new ones) and the lock make it slow, not impossible.
+- The login screen uses the **same** limiter as administrator authorization. Signing in between failed attempts does not
+  replenish the attempt budget; failures in either path count toward the same persisted lock. PIN entropy still matters
+  because the login and authorization actions both accept short numeric secrets.
 - The unit of "physical delivery" is outside PostgreSQL: the system records what the operator confirms.
