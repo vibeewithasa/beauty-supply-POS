@@ -100,7 +100,7 @@ Documentation-only corrections do not rerun the test suites. For a new release, 
   The system records what the operator confirms about the physical delivery of money; it cannot verify it.
   Cash refunds are taken from the register open at payment time, not necessarily the session of the sale. No physical printer was tested for the voucher.
 - **Backups:** verified manual and schedulable (Task Scheduler wrapper) backups with an optional verified second copy on an external/LAN location. Nothing is sent off-site by design.
-  Backups hold real data and PIN hashes: keep the media encrypted or controlled. PostgreSQL must be installed and managed on each machine.
+  Backups hold real data and PIN hashes: keep the media encrypted or controlled. For source-based or externally managed installations, PostgreSQL is provisioned separately; the 0.8.1 **self-contained installer already bundles a dedicated PostgreSQL instance**. That managed instance is not a Windows service and currently needs operator-initiated backups from Maintenance (`docs/SELF_CONTAINED_INSTALLER.md`). Do not assume the source-development backup scheduling instructions apply to it.
 - **Pilot readiness (Sprint 06, `docs/PILOT_CHECKLIST.md`):** code is ready to be tried in a controlled pilot; it is NOT ready for a real store until: the installer is installed/uninstalled in a
   disposable environment and signed, the printer, reader and touch screen are tested, the owner's `beauty_pos` is updated deliberately (still 0000-0006 at the last check), and the
   open product questions are decided.
