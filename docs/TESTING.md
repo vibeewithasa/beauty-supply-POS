@@ -64,7 +64,7 @@ Statuses: `PASS`, `FAIL`, `KNOWN_FAIL`, `UNEXPECTED_PASS`, `SKIP`, `WARN`.
 - `isolation.*` and `renderer.console_errors` entries are environment checks, counted separately from tests
   in the summary (`tests` vs `infraChecks`).
 - Logs, screenshots and `results.json` go to `e2e-artifacts/<run>/` (git-ignored).
-- The packaged build is **not** exercised (`SKIP`): production coverage is not claimed.
+- The regular Electron browser suite may report a packaged-app placeholder as `SKIP`; that placeholder is **not** the packaged validation. `npm run test:packaged` is a separate command that launches `release/win-unpacked/Beauty POS.exe` after `npm run package:dir` and exercises the packaged renderer and shell. Neither that check nor `test:installer-app` proves a real NSIS install/uninstall on another Windows machine. When reporting results, distinguish development Electron suites, unpacked-package tests, extracted-installer tests and manual installation evidence.
 
 ## Environment knobs (tests only)
 
