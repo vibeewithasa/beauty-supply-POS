@@ -9,7 +9,7 @@ Verdicts used in the reports (they are three different things):
 * **READY FOR PILOT**: the product may be tried in a controlled, supervised way on a prepared PC.
 * **READY FOR STORE**: installation, security, backups, hardware and daily operation meet what was agreed. **Not reached** (see the end).
 
-> For presenting the system on a laptop with fictional data (not a pilot), see `docs/DEMO_INSTALL_LAPTOP.md` and `docs/DEMO_CHECKLIST.md`.
+> **Deployment mode matters:** the steps below describe a *technician-managed external PostgreSQL* pilot from an earlier release, not the self-contained 0.8.1 first-run installer. For a laptop demonstration or clean local installation using the bundled database, use `docs/DEMO_INSTALL_LAPTOP.md` and `docs/DEMO_CHECKLIST.md`. Do not install a second PostgreSQL or run these manual schema commands against the installer's managed database.
 
 ## 1. Preparing a new PC
 
@@ -93,7 +93,7 @@ npm run db:backup -- --out "D:\Respaldos POS" --label diario --keep 14 --second-
   Start Menu entry, uninstall and "data preserved after uninstall" are still to be checked in a VM or a spare PC.
 * **Physical printer** (thermal 80/58 mm), **barcode reader** and **touch screen**: not tested. Printing was verified only as a PDF of the real print document; touch
   targets only by measuring the controls (keypad 56x48 px or more, Pagar 44 px or more).
-* **Code signing certificate and application icon:** none (SmartScreen will warn; the default Electron icon is used). Auto-update is off.
+* **Code signing:** no certificate was used for the verified unsigned installer, so SmartScreen may warn and trusted auto-update remains unavailable. **Icon:** the later 0.8.x build uses a provisional `assets/brand/icon.png` "EL" mark rather than the default Electron icon; it is not an approved store logo (see `docs/PACKAGING.md`).
 * **Off-site/cloud backups:** deliberately not implemented; the second copy is a local/external location.
 * **Admin commands** (migrations, backups, restore, roles) are Node scripts; a PC with only the installed app cannot run them without Node and the `scripts` folder.
 * No fiscal invoicing (CFDI), taxes or discounts. Legacy returns (registered before refund control) cannot be paid from the POS.
