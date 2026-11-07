@@ -1,5 +1,7 @@
 # UX audit — Beauty Supply POS (Estética Leal)
 
+> **Historical review, not the current feature status.** The screen inventory and sprint proposals below record the state of branch `feat/pos-ux-sales-receipts` before later refund settlement, backups and installer work. In particular, the statements that refunds cannot be marked paid and that settlement is still a P0 feature were superseded by Sprint 05. For current behavior and risks, consult [STATUS.md](STATUS.md), [REFUNDS.md](REFUNDS.md), [TESTING.md](TESTING.md), and [DEMO_CHECKLIST.md](DEMO_CHECKLIST.md). Keep the old findings below for audit provenance; do not use them as today's deployment checklist.
+
 Branch `feat/pos-ux-sales-receipts`, base `4ebe7ba`. Every statement below comes from reading the code of each screen and
 from the automated visual runs (Playwright driving the real Electron window, screenshots kept locally in
 `e2e-artifacts/`, which Git ignores). Things that were **not** measured are listed explicitly at the end of the method.
