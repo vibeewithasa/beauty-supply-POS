@@ -33,7 +33,7 @@ El resultado debe ser el SHA-256 de la tabla.
 
 ## 2. Instalar la aplicación
 
-1. Doble clic en el instalador. Windows SmartScreen puede avisar "Windows protegió su PC" porque **el instalador no está firmado**: **Más información → Ejecutar de todas formas**.
+1. **Antes de ejecutar**, confirma que el instalador proviene del responsable del proyecto y que su SHA-256 coincide exactamente con el del artefacto aprobado (paso 1). Un nombre de archivo o un hash obtenido de la misma fuente no prueban por sí solos su autenticidad. Doble clic en el instalador. Windows SmartScreen puede avisar "Windows protegió su PC" porque **el instalador no está firmado**. No omitas automáticamente esa advertencia: si la procedencia o la huella no están verificadas, detente. Solo en el ensayo controlado con el archivo verificado, el responsable puede decidir **Más información → Ejecutar de todas formas**.
 2. Es de un solo clic y por usuario (no pide administrador). Crea los accesos **Estética Leal POS** en el escritorio y en el menú Inicio y abre la aplicación.
    Se instala en `C:\Users\<tu usuario>\AppData\Local\Programs\Beauty POS\`.
 
