@@ -53,6 +53,10 @@ database is ever written to, overwritten or dropped.
 | `npm run test:all` | unit + every Electron suite + migrations + ops + legacy + installer provisioning | yes |
 | `npm run db:precheck` | read-only pre-flight for the integrity migrations (see below) | DB only |
 
+## What `test:all` does not certify
+
+The current `package.json` runs unit tests, `e2e/run.mjs all`, migrations, operations, legacy-copy checks and installer provisioning through `npm run test:all`. **It does not invoke** `test:packaged`, `test:installer-app` or `test:demo` as part of that command. These require their own prerequisites and commands, including a built package or installer. Passing `test:all` must not be reported as proof of the extracted installer UI, an NSIS install/uninstall, a Windows reboot or connected physical hardware. See `docs/DEMO_CHECKLIST.md` for the manual boundaries.
+
 ## Reading results
 
 Statuses: `PASS`, `FAIL`, `KNOWN_FAIL`, `UNEXPECTED_PASS`, `SKIP`, `WARN`.
