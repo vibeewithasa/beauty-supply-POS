@@ -1,7 +1,6 @@
 # Pilot checklist: Estética Leal
 
-What to do, in order, to run a controlled pilot of Beauty POS on a store PC, and what is NOT verified yet. Everything marked
-"tested" was exercised by the automated suites (`npm run test:all`); "NOT tested" is a real gap, not a formality.
+What to do, in order, to run a controlled pilot of Beauty POS on a store PC, and what is NOT verified yet. The automated evidence comes from **different suites**, not solely from `npm run test:all`. In particular, `test:packaged`, `test:installer-app` and `test:demo` require separate package/installer prerequisites, and none replaces a physical NSIS install/uninstall or hardware test. Check the command and artifacts for each claim in [TESTING.md](TESTING.md). "NOT tested" remains a real blocker, not a formality.
 
 Verdicts used in the reports (they are three different things):
 
