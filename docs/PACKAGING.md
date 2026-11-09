@@ -26,8 +26,7 @@ production `node_modules`. It never contains `.env`, credentials or source maps 
 * All web permission requests (camera, notifications, geolocation, ...) are denied.
 * The packaged `index.html` carries a Content-Security-Policy (`default-src 'self'`, no `unsafe-eval`, no inline scripts).
   The dev server has no CSP (Vite hot reload needs inline scripts), so CSP is only exercised by the packaged tests.
-* Auto-update is **off**. It only runs if `POS_UPDATE_FEED_URL` is set to an `https://` feed, and updates should only be
-  trusted once the installer is code-signed. The old placeholder feed (`http://localhost/updates`) was removed.
+* Auto-update is **disabled by default**, not permanently removed: it can be explicitly enabled by setting `POS_UPDATE_FEED_URL` to an `https://` feed. This flag does not sign an installer or make an arbitrary update source trustworthy. Until releases and update artifacts are signed and their source verified, do not configure an update feed for a store deployment. The obsolete `http://localhost/updates` placeholder was removed.
 
 ## Database configuration
 
