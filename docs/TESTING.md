@@ -70,6 +70,10 @@ Statuses: `PASS`, `FAIL`, `KNOWN_FAIL`, `UNEXPECTED_PASS`, `SKIP`, `WARN`.
 - Logs, screenshots and `results.json` go to `e2e-artifacts/<run>/` (git-ignored).
 - The regular Electron browser suite may report a packaged-app placeholder as `SKIP`; that placeholder is **not** the packaged validation. `npm run test:packaged` is a separate command that launches `release/win-unpacked/Beauty POS.exe` after `npm run package:dir` and exercises the packaged renderer and shell. Neither that check nor `test:installer-app` proves a real NSIS install/uninstall on another Windows machine. When reporting results, distinguish development Electron suites, unpacked-package tests, extracted-installer tests and manual installation evidence.
 
+## Confirming the legacy-data migration actually ran
+
+`npm run test:all` invokes `test:legacy`, but the legacy-copy scenario can report `SKIP` when no validated backup or suitable package is available. An overall command finishing successfully is **not** proof that a real historical-data copy was migrated and opened. To claim that coverage, review the dedicated `test:legacy` output for a genuine `PASS`, verify the relevant backup/package prerequisites, and retain the run's evidence outside source control. Never substitute the active `beauty_pos` database or a real production backup for a throwaway E2E database, and never add database dumps or PIN-related data to Git.
+
 ## Environment knobs (tests only)
 
 | Variable | Effect |
