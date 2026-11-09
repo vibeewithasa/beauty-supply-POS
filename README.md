@@ -82,7 +82,7 @@ npm run dev
 
 The first command is a **read-only dry run**, not an installation step that updates the schema. The second command is an explicit schema change: review its target first, and follow [the migration and backup procedure](docs/OPERATIONS.md) for any database containing data. Never apply migrations to another database by accident.
 
-For local development, `npm run seed:admin` can provision a sample administrator account. **Never reuse development credentials or default PINs in a real deployment.**
+For source-based local development, `npm run seed:admin` creates an administrator using the database configured by `DATABASE_URL`. It has **no default PIN**: run it in an interactive terminal to enter a new 6–8 digit PIN twice (input is hidden). A noninteractive run requires `ADMIN_PIN` for that invocation only; clear it from the environment afterward and never put it in source control or a shared terminal transcript. This command is not needed for the self-contained installer, whose wizard creates the first administrator. See `scripts/seed-admin.mjs` and [operations](docs/OPERATIONS.md).
 
 ## Available scripts
 
