@@ -123,8 +123,7 @@ It checks the checksum against the `.summary.json`, creates `beauty_pos_recupera
 `beauty_pos_smoke`, `postgres`, templates and the configured database are refused), restores, and compares row counts,
 migrations and the schema fingerprint. If anything fails it drops only the database it just created.
 
-To go back to a recovered copy: stop the POS, point `DATABASE_URL` (`.env` or `config.json`) at the new database name, start
-the POS, and check the data. **Keep the old database** until you are sure; deleting it is a manual, deliberate decision.
+To use a recovered copy with an **externally managed** PostgreSQL: stop the POS, restore into a NEW database, then point `DATABASE_URL` (or development `.env`) to the new database name. For a packaged app using `%APPDATA%\Beauty POS\config.json`, **do not edit the protected JSON or try to replace its encrypted password manually**: start `"Beauty POS.exe" --reconfigure`, enter and test the recovered database credentials through the setup window, then restart and verify the data. For the self-contained 0.8.1 instance, use its own maintenance/recovery procedure rather than assuming these external-connection commands work. **Keep the old database** until recovery has been verified; deletion is a separate manual decision.
 
 ### If something goes wrong
 
