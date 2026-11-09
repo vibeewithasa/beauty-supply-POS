@@ -109,6 +109,17 @@ schtasks /Create /TN "Beauty POS backup" /SC DAILY /ST 22:30 /RL LIMITED /F ^
 schtasks /Run /TN "Beauty POS backup"
 ```
 
+**Second-copy scheduling pitfall:** `set POS_BACKUP_SECOND_DIR=E:\Copia externa` in a separate interactive `cmd.exe` or `$env:POS_BACKUP_SECOND_DIR = ...` in PowerShell only changes that shell's environment. An independently started Task Scheduler job does **not** automatically inherit it. Configure the second-copy variable in the task's actual launch environment, for example through an operator-managed wrapper outside this repository, and point the scheduled action to that wrapper:
+
+```bat
+@echo off
+set "POS_BACKUP_SECOND_DIR=E:\Copia externa"
+call "C:\Projects\beauty-supply-POS\scripts\db-backup-task.cmd"
+exit /b %ERRORLEVEL%
+```
+
+Replace the example paths with the real ones and protect the wrapper from unauthorized edits. After scheduling, run `schtasks /Run /TN "Beauty POS backup"` and verify both `task.log` and `backup.log` show `second=verified`, **not** merely that a primary dump exists. This procedure concerns a source-based/external-PostgreSQL installation; the 0.8.1 managed instance has no automatic backup scheduler yet.
+
 Requirements: Node.js on the machine, the project folder with `node_modules`, `.env` with `DATABASE_URL`, and the PostgreSQL
 client tools (`pg_dump`/`pg_restore`; or set `POS_PG_BIN`). Check `task.log` and `backup.log` regularly: a failed run is
 logged as `FALLO` and Task Scheduler shows a non-zero result. **Use the second copy** (see above): a backup on the same disk does not survive the disk.
