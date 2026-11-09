@@ -49,7 +49,7 @@ Cosas que conviene decir con honestidad: el sistema es una versión de demostrac
 
 Orden recomendado, con el resultado esperado. Anotar fecha y resultado. **Mientras estas pruebas no se hagan, el estado es "listo para integrar", no "listo para presentar autónomo".**
 
-1. **(manual) Instalación real con el `.exe`.** Doble clic → SmartScreen "Más información → Ejecutar de todas formas" → se instala sin pedir administrador → aparecen los accesos *Estética Leal POS* (escritorio y menú Inicio) → la aplicación abre con el icono "EL" y el asistente.
+1. **(manual) Instalación real con el `.exe`.** Antes de ejecutarlo, confirmar la procedencia y comparar el SHA-256 con el artefacto aprobado según `docs/DEMO_INSTALL_LAPTOP.md` (un hash aislado no prueba legitimidad). Si SmartScreen muestra una advertencia, **no omitirla automáticamente**: investigar cualquier discrepancia. Solo quien controla el ensayo, después de validar el archivo, puede decidir continuar. Comprobar después que se instala sin pedir administrador, aparecen los accesos *Estética Leal POS* y la aplicación abre con el icono provisional "EL" y el asistente.
 2. **(manual) Asistente en un Windows limpio, sin PostgreSQL instalado:** modalidad Demostración, PIN distintos → pasos en verde → reinicio automático → pantalla de PIN. Anotar cuánto tarda y que no apareció ningún aviso del Firewall ni petición de administrador.
 3. **(manual) Equipo con otro PostgreSQL instalado (5432):** el asistente lo menciona, usa el puerto 55432 y no cambia nada del otro.
 4. **(manual) Reinicio de Windows:** abrir la aplicación sin tocar nada; la base arranca sola y se entra con el PIN. Probar también apagar Windows con la aplicación abierta (apagado sin cerrar) y volver a abrirla.
