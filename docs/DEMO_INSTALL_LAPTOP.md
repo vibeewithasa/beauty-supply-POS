@@ -29,7 +29,7 @@ Cópialo a la laptop con una memoria USB. Comprueba que no se dañó (PowerShell
 Get-FileHash "$env:USERPROFILE\Downloads\Estética Leal POS Setup 0.8.1.exe" -Algorithm SHA256
 ```
 
-El resultado debe ser el SHA-256 de la tabla.
+El resultado debe coincidir con el SHA-256 **del mismo instalador aprobado**. El valor de la tabla describe el artefacto 0.8.1 documentado; **no es una huella universal de la versión 0.8.1**. Volver a ejecutar `npm run package`, cambiar un recurso o cambiar el entorno de empaquetado puede producir otro `.exe` y otro hash incluso con el mismo nombre. Si el archivo se volvió a generar, la persona responsable debe registrar y transmitir su nuevo SHA-256 por un canal independiente antes de copiarlo a la laptop. No fuerces una coincidencia ni desactives verificaciones.
 
 ## 2. Instalar la aplicación
 
