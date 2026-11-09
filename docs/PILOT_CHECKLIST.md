@@ -23,11 +23,18 @@ Verdicts used in the reports (they are three different things):
    npm run db:migrate -- --apply --confirm-database=beauty_pos
    ```
 5. Create the **runtime role** (least privilege: data only, no DDL, no ownership):
-   ```bash
-   npm run db:roles -- --role pos_runtime
-   set POS_RUNTIME_PASSWORD=<at least 12 random characters>
-   npm run db:roles -- --role pos_runtime --apply --confirm-database=beauty_pos
+   ```powershell
+   npm run db:roles -- --role pos_runtime # read-only plan
+   $secure = Read-Host 'Contraseña aleatoria del rol (12+ caracteres)' -AsSecureString
+   $env:POS_RUNTIME_PASSWORD = [System.Net.NetworkCredential]::new('', $secure).Password
+   try {
+     npm run db:roles -- --role pos_runtime --apply --confirm-database=beauty_pos
+   } finally {
+     Remove-Item Env:POS_RUNTIME_PASSWORD -ErrorAction SilentlyContinue
+     $secure = $null
+   }
    ```
+   `db:roles` reads `POS_RUNTIME_PASSWORD` from the process environment; do not pass the password as an argument or write it directly into PowerShell history. This is for a technician-managed external database, **not** the 0.8.1 self-contained first-run wizard.
 6. Install and start the application (the installer is unsigned, see the blockers below). With no configuration it opens the **first-run setup window**.
 
 ## 2. First start (setup window)
