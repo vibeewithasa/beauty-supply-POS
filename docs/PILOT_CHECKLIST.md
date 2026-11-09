@@ -55,9 +55,7 @@ If PostgreSQL is down or refuses the stored credentials, the setup window opens 
 | Return without an administrator | "Registrar la devolución sin reembolso": stock comes back, refund stays PENDIENTE; later *Registrar pago pendiente* with an administrator PIN | |
 | Close | *Caja > Cerrar Caja*: count the cash; the dialog shows what is expected | Difference is shown with its sign. *Caja > Historial de sesiones* has the closing summary (print/CSV) |
 
-The administrator PIN is checked in the main process, is never stored or logged, and has its own attempt budget: **5 wrong PINs (login or authorization, the budget is
-shared) lock PIN checks for 30 s, doubling up to 15 min**; signing in does not give attempts back; the counter survives restarting the app and forgets itself after
-15 quiet minutes (nothing is ever locked permanently). If someone is locked out, wait; do not restart the PC expecting a reset.
+The administrator PIN is checked in the main process and is never stored or logged. **Login and administrator authorization use one shared installation-wide attempt budget**, not two independent counters. Five failed PIN checks across either path cause an initial 30-second lock, with increasing lock duration up to 15 minutes; a successful login does not restore attempt credit. The state persists across app restarts and resets after 15 quiet minutes. If locked out, wait rather than restarting the PC to try to evade the limit. See `docs/REFUNDS.md` and `docs/STATUS.md`.
 
 ## 4. Backups and recovery
 
