@@ -80,7 +80,7 @@ Documentation-only corrections do not rerun the test suites. For a new release, 
 - **Database configuration in the package:** nothing is packaged. `DATABASE_URL` from the environment or the protected `config.json` in
   the user data folder (loopback hosts only unless `POS_ALLOW_REMOTE_DB=1`). The password is encrypted with Windows (DPAPI); encryption protects the stored secret, it does
   not replace a low-privilege PostgreSQL role, and any process running as that Windows user can still use the application's connection (details in `docs/PACKAGING.md`).
-- **Installer assets:** no code-signing certificate (SmartScreen warning, updates not trustworthy) and no `build/icon.ico`.
+- **Installer assets:** the recorded 0.8.1 installer is unsigned (SmartScreen warning; no trusted automatic updates). Although there is no `build/icon.ico`, the packaged app uses the **provisional `assets/brand/icon.png` "EL" icon**, which is not the owner's approved business logo. Treat a signed release and final approved branding as separate deployment requirements; see `docs/PACKAGING.md`.
   Auto-update only runs with an explicit `POS_UPDATE_FEED_URL` (https).
 - **Dependencies (Sprint 04):** the 45 findings (2 critical, 32 high) were reduced to **4 moderate, all dev tooling**; `npm audit --omit=dev`
   reports **0**. Applied: `npm audit fix` (semver-compatible: drizzle-orm 0.45.4, electron-updater, vite, postcss and transitives),
