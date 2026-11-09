@@ -52,8 +52,7 @@ Rules and risks:
 * **Fail-safe:** with no protected storage available nothing is saved (never a plain-text fallback); an existing file is left exactly as it was. A password that the
   current Windows account cannot decrypt (another user, another PC, a copied profile) opens the setup window with the data prefilled. `safeStorage` only works once the
   app is ready, so the database module is loaded after that (`main.ts`).
-* Without a valid configuration the app opens the **setup window** (own preload with four calls; no application channel is registered; it never migrates). A bad
-  `DATABASE_URL` shows an explanation window instead. `"Beauty POS.exe" --reconfigure` opens the setup window again to point the app at another database.
+* **Current 0.8.1 first launch:** without an existing connection configuration, the packaged app starts the **self-contained installation wizard** (demo or clean). An existing external-PostgreSQL configuration, including a migrated 0.7.0 `config.json`, continues through the external **connection setup window** rather than provisioning a new managed instance; the connection setup itself never migrates a database. A bad `DATABASE_URL` shows an explanation window instead. `"Beauty POS.exe" --reconfigure` is the explicit path for changing an externally managed database connection. Do not describe that connection setup as the default clean-install wizard.
 * The connection string and password are redacted from logs and from errors that reach the renderer.
 
 First run: create the database in PostgreSQL, prepare its schema with the explicit command (`npm run db:migrate -- --apply
