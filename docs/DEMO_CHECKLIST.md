@@ -31,12 +31,12 @@ Con `npm run test:installer` (29), `npm run test:installer-app` (14), `npm run t
 1. **Entrada.** Mostrar la pantalla de PIN con *Estética Leal*. Entrar como **Vendedor Demo**: solo ve Vender, Caja, Historial, Devoluciones y Ver Stock (sin Reportes ni Usuarios).
 2. **Caja.** *Caja → Abrir Caja* con un fondo (por ejemplo $500.00). Explicar que no se vende sin caja abierta.
 3. **Venta en efectivo.** *Vender*: buscar por nombre ("Shampoo"), subir la cantidad, *Pagar → Efectivo → Completar Venta*. Mostrar la confirmación y el ticket.
-4. **Venta con tarjeta y lector.** Escribir en el buscador el código de barras de un producto con código (por ejemplo el del Shampoo Hidratante: se muestra en *Productos*) para simular el lector. Pagar con tarjeta.
+4. **Venta con tarjeta y lector (simulados).** Escribir en el buscador el código de barras de un producto con código (por ejemplo el del Shampoo Hidratante: se muestra en *Productos*) para simular el lector. Seleccionar **Tarjeta** con datos ficticios y aclarar que **el POS no procesa ni confirma cargos bancarios**: la operación en una terminal externa debe verificarse por separado. No realizar un cargo real durante esta demostración.
 5. **Historial y ticket.** *Historial*: buscar la venta, abrirla, *Ver recibo* (vista previa del ticket, "No es una factura fiscal"). Reimprimir solo si hay impresora (ver D).
 6. **Movimientos de caja.** *Registrar Movimiento*: un retiro con razón. Mostrar que el total esperado cambia.
 7. **Cierre de caja.** *Cerrar Caja*, contar el efectivo, ver la diferencia. Mostrar *Historial de sesiones*: tres días anteriores, uno con faltante de $5.00.
 8. **Cambiar de usuario** (*Salir*) y entrar como **Administrador Demo**.
-9. **Devoluciones.** Buscar una venta de esta presentación, devolver una pieza, método efectivo, confirmar que se entregó el dinero y **autorizar con el PIN del administrador** (el vendedor no puede autorizar solo). Mostrar el comprobante.
+9. **Devoluciones (solo datos ficticios).** Buscar una venta de esta presentación, devolver una pieza, método efectivo y **simular** la entrega de dinero, indicando que el POS registra la confirmación del operador pero no transfiere efectivo por sí mismo. **Autorizar con el PIN del administrador** (el vendedor no puede autorizar solo) y mostrar el comprobante. No registrar una devolución de tarjeta como pagada hasta que el reembolso exista en la terminal externa.
 10. **Devolución pendiente.** En la lista de devoluciones hay una **PENDIENTE** de la demostración: *Registrar pago* → efectivo → PIN del administrador. Explicar que "registrar" una devolución no significa que se pagó.
 11. **Inventario.** *Productos* (alta/edición, cambio de precio con historial), *Recepción* (entrada de mercancía), *Ver Stock* (poco stock resaltado).
 12. **Reportes.** Elegir *Desde* tres días atrás y *Generar reporte*: ventas por método y por producto, devoluciones pagadas y pendientes, exportar CSV.
