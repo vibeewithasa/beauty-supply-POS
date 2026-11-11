@@ -26,7 +26,7 @@ async function openSecondWindow(app) {
 const CALLS = {
   "products:getAll": "api.products.getAll()",
   "products:findBySkuOrBarcode": "api.products.findBySkuOrBarcode('x')",
-  "products:create": "api.products.create({sku:'SEC-X',name:'x',price:'1',stock:1})",
+  "products:create": "api.products.create({name:'x',price:'1',stock:1})",
   "products:update": "api.products.update(1,{name:'x'})",
   "products:softDelete": "api.products.softDelete(1,'x')",
   "cash:getActiveSession": "api.cash.getActiveSession()",
@@ -188,7 +188,7 @@ export async function run(c) {
     expect(created.ok, "create vendor: " + created.err);
     const upd = await ipc(page, `api.users.update(${created.v.id},{name:'E2E_SEC_VENDOR2',role:'vendor'})`);
     const list = await ipc(page, "api.users.getAll()");
-    const prod = await ipc(page, "api.products.create({sku:'E2E-SEC-NEW-" + c.runId + "',name:'x',price:'1.00',stock:1})");
+    const prod = await ipc(page, "api.products.create({name:'x',price:'1.00',stock:1})");
     const dash = await ipc(page, "api.dashboard.getStats()");
     const rep = await ipc(page, "api.reports.getDeletedProducts()");
     const del = await ipc(page, `api.users.delete(${created.v.id})`);

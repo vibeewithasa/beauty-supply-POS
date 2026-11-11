@@ -18,42 +18,70 @@ import {
 import { BusinessError, pgErrorCode } from "./errors";
 import { centsFromDb, centsToDb } from "./money";
 import { parseId } from "./validation";
+import { formatSku } from "./sku";
 import { parseInventoryMovement, parsePriceChange, parseProductCreate, parseProductUpdate } from "./catalog-validation";
 
 const duplicateSku = () => new BusinessError("SKU_DUPLICADO", "Ya existe un producto con ese SKU");
 
+// How many sequence values are skipped because an old, manually typed SKU already holds that text (one pass is the norm).
+const MAX_SKU_SKIPS = 50;
+// A concurrent writer taking the same text between the check and the insert is only possible through direct SQL: retry the whole transaction.
+const MAX_SKU_ATTEMPTS = 5;
+
+/**
+ * Creates a product with a system-generated SKU. The number is the product's own id, drawn from PostgreSQL's sequence
+ * (nextval is atomic across connections: two concurrent creations can never get the same one; MAX(id) + 1 would race).
+ * An existing SKU is never reused or changed: if its text is already taken the sequence simply moves on.
+ */
 export async function createProduct(userId: number, data: unknown) {
   const p = parseProductCreate(data);
-  try {
-    return await db.transaction(async (tx) => {
-      const [product] = await tx
-        .insert(productsTable)
-        .values({
-          sku: p.sku,
-          name: p.name,
-          price: centsToDb(p.priceCents),
-          stock: p.stock,
-          barcode: p.barcode,
-          category: p.category,
-          status: p.status,
-        })
-        .returning();
-      if (p.stock > 0) {
-        // initial stock is history too, attributed to the authenticated user
-        await tx.insert(inventoryMovementsTable).values({
-          productId: product.id,
-          userId,
-          type: "IN",
-          amount: p.stock,
-          reason: "Stock inicial",
-        });
-      }
-      return product;
-    });
-  } catch (e) {
-    if (pgErrorCode(e) === "23505") throw duplicateSku();
-    throw e;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await insertProduct(userId, p);
+    } catch (e) {
+      if (pgErrorCode(e) !== "23505") throw e;
+      if (attempt >= MAX_SKU_ATTEMPTS) throw new BusinessError("SKU_NO_DISPONIBLE", "No se pudo generar un SKU único; inténtalo de nuevo");
+    }
   }
+}
+
+async function insertProduct(userId: number, p: ReturnType<typeof parseProductCreate>) {
+  return await db.transaction(async (tx) => {
+    let id = 0;
+    let sku = "";
+    for (let skipped = 0; ; skipped++) {
+      if (skipped > MAX_SKU_SKIPS) throw new BusinessError("SKU_NO_DISPONIBLE", "No se pudo generar un SKU único; inténtalo de nuevo");
+      const { rows } = await tx.execute(sql`select nextval(pg_get_serial_sequence('products', 'id'))::int as id`);
+      id = Number((rows[0] as { id: number }).id);
+      sku = formatSku(id);
+      const [taken] = await tx.select({ id: productsTable.id }).from(productsTable).where(eq(productsTable.sku, sku)).limit(1);
+      if (!taken) break;
+    }
+    const [product] = await tx
+      .insert(productsTable)
+      .values({
+        id,
+        sku,
+        name: p.name,
+        price: centsToDb(p.priceCents),
+        stock: p.stock,
+        barcode: p.barcode,
+        category: p.category,
+        status: p.status,
+      })
+      .returning();
+    if (p.stock > 0) {
+      // initial stock is history too, attributed to the authenticated user
+      await tx.insert(inventoryMovementsTable).values({
+        productId: product.id,
+        userId,
+        type: "IN",
+        amount: p.stock,
+        reason: "Stock inicial",
+      });
+    }
+    return product;
+  });
 }
 
 export async function updateProduct(idRaw: unknown, data: unknown) {

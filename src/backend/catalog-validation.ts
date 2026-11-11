@@ -8,13 +8,12 @@ import { toCents } from "./money.ts";
 import { parseId, parseReason } from "./validation.ts";
 
 export const MAX_STOCK = 1_000_000;
-const SKU_RE = /^[A-Za-z0-9][A-Za-z0-9._\-/]{0,63}$/;
 const BARCODE_RE = /^[A-Za-z0-9._\-/]{1,128}$/;
 const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
 
 export type ProductStatusInput = "active" | "inactive";
+/** The SKU is never part of a product's input: PostgreSQL-backed generation in catalog-service.ts assigns it on creation. */
 export type ProductCreateInput = {
-  sku: string;
   name: string;
   priceCents: number;
   stock: number;
@@ -23,7 +22,6 @@ export type ProductCreateInput = {
   status: ProductStatusInput;
 };
 export type ProductUpdateInput = Partial<{
-  sku: string;
   name: string;
   barcode: string | null;
   category: string | null;
@@ -67,14 +65,6 @@ function optionalText(value: unknown, field: string, max: number): string | null
   return text(value, field, max);
 }
 
-function sku(value: unknown): string {
-  const v = typeof value === "string" ? value.trim() : "";
-  if (!SKU_RE.test(v)) {
-    throw new BusinessError("CAMPO_INVALIDO", "SKU: 1 a 64 caracteres (letras, números, . _ - /), debe empezar con letra o número");
-  }
-  return v;
-}
-
 function barcode(value: unknown): string | null {
   if (value === null || value === undefined) return null;
   const v = typeof value === "string" ? value.trim() : "";
@@ -100,9 +90,9 @@ export function parseStock(value: unknown): number {
 
 export function parseProductCreate(data: unknown): ProductCreateInput {
   if (!isObject(data)) throw new BusinessError("PRODUCTO_INVALIDO", "Datos de producto inválidos");
-  rejectUnknown(data, ["sku", "name", "price", "stock", "barcode", "category", "status"]);
+  if ("sku" in data) throw new BusinessError("SKU_AUTOMATICO", "El SKU lo genera el sistema: no se captura al crear un producto");
+  rejectUnknown(data, ["name", "price", "stock", "barcode", "category", "status"]);
   return {
-    sku: sku(data.sku),
     name: text(data.name, "Nombre", 255),
     priceCents: toCents(data.price, "precio"),
     stock: data.stock === undefined ? 0 : parseStock(data.stock),
@@ -120,9 +110,9 @@ export function parseProductUpdate(data: unknown): ProductUpdateInput {
   if ("price" in data) {
     throw new BusinessError("PRECIO_NO_MODIFICABLE", "El precio solo cambia mediante un cambio de precio registrado");
   }
-  rejectUnknown(data, ["sku", "name", "barcode", "category", "status"]);
+  if ("sku" in data) throw new BusinessError("SKU_NO_MODIFICABLE", "El SKU de un producto existente no se modifica");
+  rejectUnknown(data, ["name", "barcode", "category", "status"]);
   const out: ProductUpdateInput = {};
-  if ("sku" in data) out.sku = sku(data.sku);
   if ("name" in data) out.name = text(data.name, "Nombre", 255);
   if ("barcode" in data) out.barcode = barcode(data.barcode);
   if ("category" in data) out.category = optionalText(data.category, "Categoría", 128);

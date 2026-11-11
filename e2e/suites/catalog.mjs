@@ -24,7 +24,7 @@ export async function run(c) {
   const settled = (calls) => call(`Promise.allSettled([${calls.join(",")}]).then(rs => rs.map(x => ({ ok: x.status === 'fulfilled', err: x.reason && x.reason.message })))`);
   const snap = async () => J(await one(`select (select count(*) from products)::int products, (select coalesce(sum(stock),0) from products)::int stock,
     (select count(*) from inventory_movements)::int inv, (select count(*) from price_changes)::int prices, (select coalesce(sum(price),0) from products)::text price_sum`));
-  const sku = (label) => `E2E-${c.runId}-${label}`;
+  const sku_ = (label) => `E2E-${c.runId}-${label}`;
   const withTrigger = async (table, timing, fn, fnBody, run) => {
     await db.query(`create or replace function ${fn}() returns trigger language plpgsql as $f$ begin ${fnBody} end $f$`);
     await db.query(`create trigger ${fn}_t ${timing} on ${table} for each row execute function ${fn}()`);
@@ -65,25 +65,25 @@ export async function run(c) {
 
   // ================================================================== products: create
   await test("PROD-01.valid_create_with_initial_stock_records_the_history", "integration", async () => {
-    const r = await create({ sku: sku("P1"), name: "  Shampoo  ", price: "12.30", stock: 7, barcode: "BAR-E2E-0001", category: " Cabello " });
+    const r = await create({ name: "  Shampoo  ", price: "12.30", stock: 7, barcode: "BAR-E2E-0001", category: " Cabello " });
     expect(r.ok, r.err);
     const p = await one("select * from products where id=$1", [r.v.id]);
-    expect(p.sku === sku("P1") && p.name === "Shampoo" && money(p.price) === 12.3 && p.stock === 7 && p.barcode === "BAR-E2E-0001" && p.category === "Cabello" && p.status === "active", "row " + J(p));
+    expect(p.sku === `EL-${String(p.id).padStart(6, "0")}` && p.name === "Shampoo" && money(p.price) === 12.3 && p.stock === 7 && p.barcode === "BAR-E2E-0001" && p.category === "Cabello" && p.status === "active", "row " + J(p));
     const mv = await rows("select type, amount, reason, user_id from inventory_movements where product_id=$1", [p.id]);
     expect(mv.length === 1 && mv[0].type === "IN" && mv[0].amount === 7 && mv[0].reason === "Stock inicial" && mv[0].user_id === admin.id, "initial stock history " + J(mv));
   });
   await test("PROD-02.create_without_stock_records_no_movement_and_defaults", "integration", async () => {
-    const r = await create({ sku: sku("P2"), name: "Sin stock", price: 5 });
+    const r = await create({ name: "Sin stock", price: 5 });
     expect(r.ok, r.err);
     const p = await one("select stock, status, barcode, category from products where id=$1", [r.v.id]);
     expect(p.stock === 0 && p.status === "active" && p.barcode === null && p.category === null, J(p));
     expect((await one("select count(*)::int n from inventory_movements where product_id=$1", [r.v.id])).n === 0, "no movement");
-    expect((await create({ sku: sku("P2B"), name: "Inactivo", price: "1.00", status: "inactive" })).ok, "inactive allowed");
+    expect((await create({ name: "Inactivo", price: "1.00", status: "inactive" })).ok, "inactive allowed");
   });
   await test("PROD-03.invalid_prices_are_rejected_without_trace", "integration", async () => {
     const before = await snap();
     for (const price of ["-1", "NaN", "1.001", "'abc'", "1e12", "99999999999", "null", "undefined", "[]"]) {
-      const r = await call(`api.products.create({sku:'${sku("P3")}', name:'x', price:${price}})`);
+      const r = await call(`api.products.create({name:'x', price:${price}})`);
       expect(biz(r, "IMPORTE_INVALIDO"), `price ${price}: ${J(r)}`);
     }
     expect((await snap()) === before, "nothing persisted");
@@ -91,21 +91,28 @@ export async function run(c) {
   await test("PROD-04.invalid_stock_is_rejected_without_trace", "integration", async () => {
     const before = await snap();
     for (const stock of ["-1", "1.5", "NaN", "Infinity", "'5'", "null", "1000001"]) {
-      const r = await call(`api.products.create({sku:'${sku("P4")}', name:'x', price:'1.00', stock:${stock}})`);
+      const r = await call(`api.products.create({name:'x', price:'1.00', stock:${stock}})`);
       expect(biz(r, "STOCK_INVALIDO"), `stock ${stock}: ${J(r)}`);
     }
     expect((await snap()) === before, "nothing persisted");
   });
-  await test("PROD-05.duplicate_sku_is_a_clean_business_error_with_no_orphan_history", "integration", async () => {
-    expect((await create({ sku: sku("P5"), name: "uno", price: "1.00", stock: 3 })).ok, "first");
+  await test("PROD-05.a_client_sku_is_refused_and_a_legacy_sku_holding_the_next_number_is_skipped_not_reused", "integration", async () => {
     const before = await snap();
-    const r = await create({ sku: sku("P5"), name: "dos", price: "2.00", stock: 9 });
-    expect(biz(r, "SKU_DUPLICADO"), J(r));
-    expect((await snap()) === before, "no product and no initial-stock movement for the rejected duplicate");
+    for (const sku of [sku_("P5"), "", null, 5]) expect(biz(await create({ sku, name: "x", price: "1.00", stock: 3 }), "SKU_AUTOMATICO"), "client sku " + J(sku));
+    expect((await snap()) === before, "no product and no initial-stock movement for the refused creation");
+    // an old, manually typed SKU that happens to look like the next generated one
+    const next = (await one("select case when is_called then last_value + 1 else last_value end n from products_id_seq")).n;
+    const legacy = "EL-" + String(next).padStart(6, "0");
+    await db.query("insert into products(id, sku, name, price, stock) values($1,$2,'Legacy SKU',1,0)", [Number(next) + 1000000, legacy]);
+    const r = await create({ name: "Nuevo junto a legacy", price: "2.00", stock: 1 });
+    expect(r.ok, r.err);
+    expect(r.v.sku !== legacy && /^EL-[0-9]{6,}$/.test(r.v.sku), "generated " + r.v.sku + " must skip the occupied " + legacy);
+    const kept = await one("select name, sku from products where sku=$1", [legacy]);
+    expect(kept.name === "Legacy SKU", "the existing SKU keeps its product");
   });
   await test("PROD-06.disallowed_fields_and_statuses_are_rejected", "integration", async () => {
     const before = await snap();
-    const base = { sku: sku("P6"), name: "x", price: "1.00" };
+    const base = { name: "x", price: "1.00" };
     for (const extra of [{ id: 999 }, { createdAt: "2020-01-01" }, { updatedAt: "2020-01-01" }, { userId: 1 }, { role: "admin" }, { isAdmin: true }]) {
       const r = await create({ ...base, ...extra });
       expect(biz(r, "CAMPO_NO_PERMITIDO"), J(extra) + " -> " + J(r));
@@ -114,12 +121,11 @@ export async function run(c) {
     expect(biz(await create({ ...base, status: "weird" }), "ESTADO_INVALIDO"), "unknown status");
     expect((await snap()) === before, "nothing persisted");
   });
-  await test("PROD-07.name_sku_barcode_formats_are_enforced", "integration", async () => {
+  await test("PROD-07.name_barcode_category_formats_are_enforced", "integration", async () => {
     const before = await snap();
     const bad = [
-      { sku: "", name: "x" }, { sku: " ", name: "x" }, { sku: "-lead", name: "x" }, { sku: "a b", name: "x" }, { sku: "x".repeat(65), name: "x" }, { sku: 5, name: "x" },
-      { sku: sku("P7"), name: "" }, { sku: sku("P7"), name: "   " }, { sku: sku("P7"), name: "x".repeat(256) }, { sku: sku("P7"), name: "bad\u0000name" },
-      { sku: sku("P7"), name: "x", barcode: "has space" }, { sku: sku("P7"), name: "x", category: "y".repeat(129) },
+            { name: "" }, { name: "   " }, { name: "x".repeat(256) }, { name: "bad\u0000name" },
+      { name: "x", barcode: "has space" }, { name: "x", category: "y".repeat(129) },
     ];
     for (const b of bad) { const r = await create({ price: "1.00", ...b }); expect(biz(r, "CAMPO_INVALIDO"), J(b).slice(0, 60) + " -> " + J(r).slice(0, 160)); }
     expect(biz(await call("api.products.create(null)"), "PRODUCTO_INVALIDO"), "null payload");
@@ -132,10 +138,10 @@ export async function run(c) {
     const p = await data.product("U1", "8.00", 4);
     const before = await one("select * from products where id=$1", [p.id]);
     await new Promise((r) => setTimeout(r, 15));
-    const r = await update(p.id, { name: "Renombrado", category: "Nueva", barcode: "ABC-123", status: "inactive", sku: sku("U1-NEW") });
+    const r = await update(p.id, { name: "Renombrado", category: "Nueva", barcode: "ABC-123", status: "inactive" });
     expect(r.ok, r.err);
     const after = await one("select * from products where id=$1", [p.id]);
-    expect(after.name === "Renombrado" && after.category === "Nueva" && after.barcode === "ABC-123" && after.status === "inactive" && after.sku === sku("U1-NEW"), "fields applied " + J(after));
+    expect(after.name === "Renombrado" && after.category === "Nueva" && after.barcode === "ABC-123" && after.status === "inactive" && after.sku === before.sku, "fields applied (the SKU is untouched) " + J(after));
     expect(money(after.price) === 8 && after.stock === 4 && String(after.created_at) === String(before.created_at), "price, stock and created_at untouched");
     expect(new Date(after.updated_at) > new Date(before.updated_at), "updated_at moved");
     expect((await update(p.id, { status: "active" })).ok, "reactivating an inactive (not deleted) product is allowed");
@@ -155,7 +161,7 @@ export async function run(c) {
     expect(biz(await update(987654321, { name: "x" }), "PRODUCTO_NO_ENCONTRADO"), "nonexistent");
     expect(biz(await update("5", { name: "x" }), "PRODUCTO_INVALIDO"), "id type");
     expect(biz(await update(p.id, { name: "" }), "CAMPO_INVALIDO"), "empty name");
-    expect(biz(await update(p.id, { sku: other.sku }), "SKU_DUPLICADO"), "duplicate sku on update");
+    for (const sku of [other.sku, "NEW-SKU", ""]) expect(biz(await update(p.id, { sku }), "SKU_NO_MODIFICABLE"), "sku on update " + J(sku));
     expect((await snap()) === before, "none of the rejected updates left a trace");
   });
   await test("PROD-10.deleted_products_cannot_be_edited_or_resurrected", "integration", async () => {
@@ -401,7 +407,7 @@ export async function run(c) {
   await test("MIX-01.sales_still_work_with_products_created_and_priced_through_the_new_paths", "integration", async () => {
     await closeAll();
     const sid = (await call("api.cash.openSession(0)")).v.id;
-    const r = await create({ sku: sku("M1"), name: "Flujo completo", price: "20.00", stock: 5 });
+    const r = await create({ name: "Flujo completo", price: "20.00", stock: 5 });
     expect(r.ok, r.err);
     expect((await reprice({ productId: r.v.id, newPrice: "22.50" })).ok, "reprice");
     expect((await move(r.v.id, "IN", 3, "recepción")).ok, "add stock");
