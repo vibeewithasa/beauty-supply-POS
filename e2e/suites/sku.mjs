@@ -143,14 +143,14 @@ export async function run(c) {
 
   // ================================================================== barcode independence and search
   await test("SKU-14.barcode_is_independent_and_optional_and_both_identifiers_find_the_product", "integration", async () => {
-    const withCode = await create({ name: `Con código ${runId}`, price: "8.00", stock: 3, barcode: "7501234500017" });
+    const withCode = await create({ name: `Con código ${runId}`, price: "8.00", stock: 3, barcode: "7509038467215" });
     const without1 = await create({ name: `Sin código A ${runId}`, price: "2.00" });
     const without2 = await create({ name: `Sin código B ${runId}`, price: "2.00" });
     expect(withCode.ok && without1.ok && without2.ok, "created: " + J([withCode, without1, without2].filter((r) => !r.ok)));
-    expect(withCode.v.barcode === "7501234500017" && without1.v.barcode === null && without2.v.barcode === null, "the barcode is stored as given, or stays null");
+    expect(withCode.v.barcode === "7509038467215" && without1.v.barcode === null && without2.v.barcode === null, "the barcode is stored as given, or stays null");
     expect(withCode.v.sku !== withCode.v.barcode && SKU_RE.test(withCode.v.sku), "SKU and barcode are different fields");
     const bySku = await call(`api.products.findBySkuOrBarcode(${J(withCode.v.sku)})`);
-    const byBarcode = await call(`api.products.findBySkuOrBarcode("7501234500017")`);
+    const byBarcode = await call(`api.products.findBySkuOrBarcode("7509038467215")`);
     expect(bySku.ok && bySku.v?.id === withCode.v.id && byBarcode.ok && byBarcode.v?.id === withCode.v.id, "found by SKU and by barcode: " + J([bySku.v?.id, byBarcode.v?.id]));
     const byLegacy = await call(`api.products.findBySkuOrBarcode(${J(legacy[0].sku)})`);
     expect(byLegacy.ok && byLegacy.v?.id === legacy[0].id, "an old SKU is still found");
