@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { describeIpcError } from "@/lib/ipc-error";
+import { useNumpadPref } from "@/lib/numpad-context";
 
 interface User {
   id: number;
@@ -45,6 +46,7 @@ const fromRow = (r: any): Form => ({
 export default function SettingsPage() {
   const navigate = useNavigate();
   const [user, setUser] = useState<User | null>(null);
+  const { pref: numpad, update: updateNumpad } = useNumpadPref();
   const [form, setForm] = useState<Form | null>(null);
   const [logo, setLogo] = useState<string | null>(null); // what is stored / will be stored
   const [logoChanged, setLogoChanged] = useState(false);
@@ -141,6 +143,27 @@ export default function SettingsPage() {
         <p className="text-sm text-muted-foreground mb-4">
           Datos que aparecen en el recibo. Lo que dejes vacío no se imprime; el sistema no inventa direcciones, teléfonos ni datos fiscales.
         </p>
+
+        {/* A preference of THIS computer (kept in its Windows profile), not business data: it applies at once and is not part of "Guardar". */}
+        <Card className="p-4 mb-4" data-testid="device-settings">
+          <h2 className="font-semibold">Este equipo</h2>
+          <label htmlFor="dv-numpad" className="mt-3 flex min-h-11 cursor-pointer items-start gap-3">
+            <input
+              id="dv-numpad"
+              type="checkbox"
+              role="switch"
+              checked={numpad.enabled}
+              onChange={(e) => updateNumpad({ enabled: e.target.checked, minimized: true })}
+              className="mt-0.5 h-6 w-6 shrink-0 accent-primary"
+            />
+            <span>
+              <span className="block text-sm font-semibold">Teclado numérico en Vender</span>
+              <span className="block text-xs text-muted-foreground">
+                Un teclado en pantalla para escribir cantidades y el efectivo recibido con el dedo o el ratón. En Vender aparece como un botón «123»: tócalo para abrirlo, arrástralo donde estorbe menos y minimízalo cuando no lo uses. Solo cambia este equipo y para todas sus sesiones; no modifica los datos del negocio. Está desactivado de forma predeterminada.
+              </span>
+            </span>
+          </label>
+        </Card>
 
         {loadError ? (
           <Card className="text-center py-10 px-4">

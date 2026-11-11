@@ -14,6 +14,7 @@ import HistoryPage from "./app/history/page";
 import CashHistoryPage from "./app/cash-history/page";
 import SettingsPage from "./app/settings/page";
 import { CartProvider, useCart } from "./lib/cart-context";
+import { NumpadProvider } from "./lib/numpad-context";
 
 interface User {
   id: number;
@@ -106,6 +107,7 @@ function SessionWatcher() {
 
 function App() {
   return (
+    <NumpadProvider>
     <CartProvider>
       <SessionWatcher />
       <Routes>
@@ -215,6 +217,7 @@ function App() {
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
     </CartProvider>
+    </NumpadProvider>
   );
 }
 
