@@ -274,6 +274,39 @@ try {
     expect(c1 === "ROL_EXISTE" && c3 === "CLAVE_DEBIL" && (c2 === "ROL_AJENO"), "existing/foreign roles are not altered: " + J([c1, c2, c3]));
     expect(runtimeGrantSql(role, srcName).every((q) => !/ALL PRIVILEGES|SUPERUSER|CREATE\b/.test(q)), "the grants contain no DDL or ownership privileges");
   });
+  await test("OPS-14.runtime_role_can_generate_a_product_sku_from_the_id_sequence_and_cannot_touch_the_sequence_otherwise", "security", async () => {
+    const role = "pos_e2e_sk_" + rnd();
+    roles.add(role);
+    const pw = crypto.randomBytes(12).toString("base64url");
+    const ownerUrl = urlFor(srcName, "e2e_ops_owner");
+    await createRuntimeRole(ownerUrl, { role, password: pw, database: srcName });
+    const u = new URL(urlFor(srcName, "e2e_ops_rt"));
+    u.username = role;
+    u.password = pw;
+    const rt = new pg.Client({ connectionString: u.toString() });
+    await rt.connect();
+    try {
+      // exactly what createProduct does: draw the id from the sequence, insert with it and a SKU derived from it
+      await rt.query("begin");
+      const id = (await rt.query("select nextval(pg_get_serial_sequence('products', 'id'))::int as id")).rows[0].id;
+      const sku = "EL-" + String(id).padStart(6, "0");
+      expect((await rt.query("select 1 from products where sku=$1", [sku])).rowCount === 0, "the SKU text is free");
+      await rt.query("insert into products(id,sku,name,price,stock) values($1,$2,'runtime sku','1.00',1) returning id", [id, sku]);
+      await rt.query("insert into inventory_movements(product_id,type,amount,reason,user_id) values($1,'IN',1,'Stock inicial',1)", [id]);
+      await rt.query("rollback");
+      // the grants are the least ones for that: USAGE and SELECT on the sequence, no UPDATE (setval / restart)
+      const priv = (await rt.query("select has_sequence_privilege(current_user,'products_id_seq','USAGE') u, has_sequence_privilege(current_user,'products_id_seq','SELECT') s, has_sequence_privilege(current_user,'products_id_seq','UPDATE') w")).rows[0];
+      expect(priv.u === true && priv.s === true && priv.w === false, "sequence privileges " + J(priv));
+      const denied = async (sql, label) => {
+        try { await rt.query(sql); } catch (e) { expect(e.code === "42501", `${label} denied with a permission error, got ${e.code}`); return; }
+        throw new Error(label + " was allowed");
+      };
+      await denied("select setval('products_id_seq', 1)", "SETVAL (rewinding the numbering)");
+      await denied("alter sequence products_id_seq restart with 1", "ALTER SEQUENCE");
+      await denied("create sequence rt_hack_seq", "CREATE SEQUENCE");
+      await denied("drop sequence products_id_seq", "DROP SEQUENCE");
+    } finally { await rt.end(); }
+  });
   await test("OPS-08.role_script_dry_run_changes_nothing_and_never_takes_the_password_from_the_command_line", "security", async () => {
     const before = await withClient(urlWithDatabase(urlFor("x"), "postgres"), async (a) => (await a.query("select count(*)::int n from pg_roles")).rows[0].n, "e2e_ops_roles");
     let r = cli("db-roles.mjs", ["--role", "pos_dry_run_only"], { DATABASE_URL: srcUrl });
