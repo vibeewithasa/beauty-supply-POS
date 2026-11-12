@@ -94,12 +94,14 @@ export async function run(c) {
     await sw.waitFor();
     expect(!(await sw.isChecked()), "the switch is off");
     expect((await page.getByTestId("device-settings").innerText()).includes("Este equipo"), "section is labelled as per-device");
+    await shot("00a-settings-this-device-off");
   });
 
   await test("KEY-02.enabling_in_configuracion_is_immediate_persistent_and_touches_no_business_data", "e2e", async () => {
     const before = await one("select count(*)::int n, max(updated_at) u from business_settings");
     await setEnabled(true);
     expect(J(JSON.parse(await stored())).includes('"enabled":true'), "stored: " + (await stored()));
+    await shot("00b-settings-this-device-on");
     await page.reload();
     await page.getByRole("switch", { name: /Teclado numérico en Vender/ }).waitFor();
     expect(await page.getByRole("switch", { name: /Teclado numérico en Vender/ }).isChecked(), "still on after a reload");

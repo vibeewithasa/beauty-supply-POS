@@ -445,7 +445,13 @@ try {
       const c = new pg.Client({ connectionString: connectionUrl({ port: cfg.port, user: "pos_cluster_admin", password: adminPassword, database: "beauty_pos_demo" }) });
       await c.connect();
       try {
-        return (await c.query("select (select count(*) from sales)::int sales, (select count(*) from users)::int users, (select count(*) from products)::int products, (select count(*) from drizzle.__drizzle_migrations)::int migrations")).rows[0];
+        // fingerprints, not just counts: the existing products keep their SKU, name and price, the users keep their PIN hashes (no login has happened
+        // yet on this release), and the commercial settings row is the same
+        return (await c.query(`select (select count(*) from sales)::int sales, (select count(*) from users)::int users, (select count(*) from products)::int products, (select count(*) from drizzle.__drizzle_migrations)::int migrations,
+          (select md5(coalesce(string_agg(id || ':' || sku || ':' || name || ':' || price::text, '|' order by id), '')) from products) products_fp,
+          (select md5(coalesce(string_agg(id || ':' || pin_hash, '|' order by id), '')) from users) pins_fp,
+          (select md5(coalesce(string_agg(b::text, '|'), '')) from business_settings b) settings_fp,
+          (select count(*) from products where sku not like 'EL-%')::int manual_skus`)).rows[0];
       } finally { await c.end(); }
     };
     // 1. the previous release installs the demonstration through its own wizard
@@ -481,9 +487,21 @@ try {
     const s1 = await secretsFrom(L, userData4);
     expect(s1.runtimePassword === s0.runtimePassword && s1.adminPassword === s0.adminPassword, "the protected credentials were not regenerated");
     const now = await counts(s1.cfg, s1.adminPassword);
-    expect(JSON.stringify(now) === JSON.stringify(was), "sales, users, products and migrations are exactly as the previous release left them: " + JSON.stringify(now));
+    expect(JSON.stringify(now) === JSON.stringify(was), "sales, users, PIN hashes, products with their SKUs, settings and migrations are exactly as the previous release left them: " + JSON.stringify(now));
+    expect(now.products > 0 && now.manual_skus === now.products, "the existing products keep the SKUs they already had (none was renumbered to the EL- format): " + JSON.stringify(now));
     await ui.login(page, ADMIN_PIN);
     await page.waitForURL(/#\/dashboard$/, { timeout: 15000 });
+    // 0.8.2: a product created now gets an automatic SKU and the products of the previous release keep theirs
+    await ui.nav(page, "Productos");
+    await page.getByRole("button", { name: "Nuevo Producto" }).click();
+    const nd = page.getByRole("dialog");
+    await nd.getByLabel("Nombre", { exact: true }).fill("Producto creado con 0.8.2");
+    await nd.getByLabel("Precio inicial").fill("7.00");
+    await nd.getByLabel("Stock inicial").fill("3");
+    await nd.getByRole("button", { name: "Crear producto" }).click();
+    await page.locator("[data-sonner-toast]").filter({ hasText: /SKU EL-[0-9]{6,}/ }).first().waitFor({ timeout: 8000 });
+    const made = await counts(s1.cfg, s1.adminPassword);
+    expect(made.products === now.products + 1 && made.manual_skus === now.manual_skus, "one new product with an EL- SKU, the previous ones untouched: " + JSON.stringify(made));
     await ui.nav(page, "Historial");
     await page.getByTestId("history-summary").waitFor({ timeout: 10000 });
     await ui.nav(page, "Vender");

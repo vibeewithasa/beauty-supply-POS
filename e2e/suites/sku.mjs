@@ -15,6 +15,7 @@ export async function run(c) {
   const call = (expr) => ipc(page, expr);
   const create = (body) => call(`api.products.create(${J(body)})`);
   const settled = (calls) => call(`Promise.allSettled([${calls.join(",")}]).then(rs => rs.map(x => ({ ok: x.status === 'fulfilled', v: x.value, err: x.reason && x.reason.message })))`);
+  const shot = (name) => page.screenshot({ path: path.join(artifacts, `sku-${name}.png`) }).catch(() => {});
   const expected = (id) => "EL-" + String(id).padStart(6, "0");
   const admin = await data.user("SKU_ADMIN", "admin");
   const vendor = await data.user("SKU_VEND", "vendor");
@@ -43,6 +44,8 @@ export async function run(c) {
     await dlg.getByText("Nuevo producto").waitFor();
     expect((await dlg.getByLabel("SKU").count()) === 0 && (await dlg.locator("#pf-sku").count()) === 0, "there is no SKU field to fill");
     expect((await dlg.getByTestId("sku-auto-note").innerText()).includes("EL-000001"), "an informative note explains the automatic SKU");
+    await page.waitForTimeout(500); // the dialog animates in
+    await shot("01-new-product-form-without-sku");
     await dlg.getByLabel("Nombre").fill(`Producto automático ${runId}`);
     await dlg.getByLabel("Precio inicial").fill("19.90");
     await dlg.getByLabel("Stock inicial").fill("6");
@@ -65,6 +68,8 @@ export async function run(c) {
     const field = dlg.getByLabel("SKU");
     await field.waitFor();
     expect((await field.inputValue()) === p.sku && (await field.getAttribute("readonly")) !== null, "read-only field with the SKU");
+    await page.waitForTimeout(500);
+    await shot("02-edit-form-sku-read-only");
     await dlg.getByLabel("Nombre").fill(`Renombrado ${runId}`);
     await dlg.getByRole("button", { name: "Guardar cambios" }).click();
     await page.locator("[data-sonner-toast]").filter({ hasText: "Producto actualizado" }).first().waitFor({ timeout: 6000 });
