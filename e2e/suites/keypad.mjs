@@ -18,6 +18,9 @@ export async function run(c) {
   const BARCODE = "7508" + runId.replace(/\D/g, "").padEnd(8, "3").slice(0, 8) + "9";
   await db.query("update products set barcode=$1 where id=$2", [BARCODE, B.id]);
   await closeStrayCash(db, admin.id);
+  const salesNow = async () => (await one("select count(*)::int n from sales")).n;
+  const salesAtStart = await salesNow();
+  const total20Before = (await one("select count(*)::int n from sales where total::numeric = 20")).n;
 
   const search = page.getByPlaceholder("Código, SKU o nombre...");
   const root = () => page.locator("[data-numpad-root]");
@@ -134,7 +137,7 @@ export async function run(c) {
     await press("clear");
     await press("9");
     expect((await qty(A).inputValue()) === "9", "an emptied quantity is typed over, not appended: " + (await qty(A).inputValue()));
-    expect((await one("select count(*)::int n from sales")).n === 0, "typing is not a sale");
+    expect((await salesNow()) === salesAtStart, "typing is not a sale");
   });
 
   await test("KEY-04.the_existing_validation_still_decides_stock_limit", "e2e", async () => {
@@ -195,7 +198,7 @@ export async function run(c) {
   });
 
   await test("KEY-07.a_full_cash_sale_with_the_keypad_changes_money_and_stock_exactly_as_before", "e2e", async () => {
-    const s0 = await one("select count(*)::int n from sales");
+    const s0 = { n: await salesNow() };
     const stockA = (await one("select stock from products where id=$1", [A.id])).stock;
     await qty(B).click();
     await press("2"); // B: 2 x 3.25 = 6.50 ; A: 1 x 12.50
@@ -215,7 +218,7 @@ export async function run(c) {
     expect((await one("select stock from products where id=$1", [A.id])).stock === stockA - 1, "stock moved as always");
     const mv = await one("select amount, reason from cash_movements where sale_id=$1", [sale.id]);
     expect(money(mv.amount) === 19, "the cash movement is the sale total, not the keypad amount: " + J(mv));
-    expect(Number((await one("select count(*)::int n from sales where total::numeric = 20")).n) === 0, "the 'received' amount is not stored anywhere");
+    expect(Number((await one("select count(*)::int n from sales where total::numeric = 20")).n) === total20Before, "the 'received' amount is not stored anywhere");
     await page.getByRole("button", { name: "Nueva Venta" }).click();
   });
 
