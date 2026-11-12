@@ -326,7 +326,7 @@ export default function InventoryPage() {
               <tbody>
                 {filtered.map((p) => (
                   <tr key={p.id} className={p.status === "deleted" ? "opacity-60" : ""}>
-                    <td className="font-mono text-sm">{p.sku}</td>
+                    <td className="font-mono text-sm whitespace-nowrap">{p.sku}</td>
                     <td className="font-semibold">{p.name}</td>
                     <td className="text-sm">{p.category || "—"}</td>
                     <td className="font-mono text-sm">{p.barcode || "—"}</td>
