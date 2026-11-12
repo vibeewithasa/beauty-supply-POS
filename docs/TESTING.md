@@ -111,3 +111,13 @@ Intermittent failures of `npm run test:all` were traced to three test-side races
 * **`waitForFunction` in the packaged page.** It evaluates a string, which the packaged CSP refuses; poll with `page.evaluate` instead.
 
 Not causes (tested): saturating all 16 cores, covering the test window with an opaque window, a re-optimization of Vite's dependencies, leftover processes or ports.
+
+## LOG-03 (hardening): one intermittent failure, investigated during Sprint 08A
+
+**Symptom.** Once, in a full `npm run test:all`, `hardening/LOG-03.lock_after_repeated_failures_refuses_even_the_right_pin` failed with `locator.waitFor: Timeout 4000ms exceeded` (waiting for «Demasiados intentos» after a login attempt through the real screen). Every other check of the run passed.
+
+**What the evidence shows.** The test needs the final attempt to meet a lock that lasts 5 s (`POS_LOGIN_LOCK_MS`) from the third failed attempt. The main-process log of the failing run holds 5 `LOGIN_BLOQUEADO` refusals where every passing run holds 6: exactly the final attempt of LOG-03 was not refused by a lock. So the attempt did not find an active lock, and the only way the sequence can do that is by taking more than 5 s after the third failure. Measured, that window is normally about 0.65 s (0.5 s to the failures, 0.15 s of API calls, page reload and PIN clicks); 1.7 s inside the run that precedes it in `test:all`.
+
+**What was tried to reproduce it.** Nine runs after the failure, all passing: LOG-03 alone three times on the feature branch, three times on a detached worktree of `origin/main` (own database, port 5174), under full CPU load (16 busy processes: 1.5 s, no failure), after the exact suites that precede it in `test:all`, and inside a complete `test:all` (exit 0, 1294 s). The failure was **not reproduced**, so the cause of the one stall of more than 4 s (the test machine, not the code under test) is not proven; nothing in LOG-03, the login screen or the limiter was touched by Sprint 08A (the suite does not create products and the keypad is not mounted on the login screen).
+
+**Change.** The test now reports what it could not see: how long after the lock started the last attempt ended, the lock window and the text on the screen, instead of a bare timeout. The timeout, the lock length and the assertions are unchanged. If it fails again, that message separates «the machine stalled» (elapsed > 5000 ms) from «the screen did not react to a live lock» (elapsed well inside the window).
