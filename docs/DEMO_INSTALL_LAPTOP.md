@@ -1,7 +1,7 @@
 # Estética Leal POS: instalación en una laptop con Windows (instalador autónomo 0.8.1)
 
 Un solo archivo, **`Estética Leal POS Setup 0.8.1.exe`**, deja la aplicación lista para usar o para presentar. **No hay que instalar PostgreSQL, ni Node.js, ni correr scripts.**
-Funciona sin Internet. Arquitectura y motivos: `docs/SELF_CONTAINED_INSTALLER.md`.
+**Diseñado para funcionar sin Internet después de la instalación:** el paquete incluye PostgreSQL y las pruebas automatizadas no observaron solicitudes de red ajenas al equipo; **no se comprobó todavía una instalación y jornada completas con la laptop físicamente desconectada**. Antes de prometer una demostración independiente, completar también ese ensayo manual sin Wi-Fi ni Ethernet en un equipo de prueba (abrir, entrar, vender, cerrar caja, generar respaldo, cerrar y volver a abrir) y registrar cualquier dependencia inesperada. Arquitectura y motivos: `docs/SELF_CONTAINED_INSTALLER.md`.
 
 ## Qué se verificó y qué no (leer antes de la presentación)
 
