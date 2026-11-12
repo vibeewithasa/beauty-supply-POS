@@ -226,6 +226,7 @@ export async function run(c) {
   await test("LOG-03.lock_after_repeated_failures_refuses_even_the_right_pin", "security", async () => {
     await recover();
     for (let i = 0; i < 3; i++) expect((await login(await data.newPin())).v === null, "failure " + (i + 1));
+    const lockedAt = Date.now(); // the lock lasts LOCK_MS from here: everything below must happen inside it
     const r = await login(admin.pin);
     expect(biz(r, "LOGIN_BLOQUEADO") && /Espera \d+ s/.test(r.err), "locked, even for the correct PIN: " + J(r));
     expect((await call("api.auth.me()")).v !== undefined, "me() is not affected by the lock");
@@ -235,7 +236,11 @@ export async function run(c) {
     await resetToLogin();
     await ui.login(page, admin.pin);
     lastFail = Date.now();
-    await page.getByText(/Demasiados intentos/).first().waitFor({ timeout: 4000 });
+    // A failure here used to read only "Timeout 4000ms exceeded". It means the attempt did not meet an active lock, so say how long after the
+    // lock started it was made (the window is LOCK_MS) and what the screen showed instead.
+    const shown = await page.getByText(/Demasiados intentos/).first().waitFor({ timeout: 4000 }).then(() => true, () => false);
+    const sinceLock = Date.now() - lockedAt;
+    expect(shown, `the lock message never appeared; the lock window is ${LOCK_MS} ms and the final attempt ended ${sinceLock} ms after it started; screen: ${(await page.evaluate(() => document.body.innerText)).replace(/s+/g, " ").slice(0, 200)}`);
     expect(!(await page.evaluate(() => sessionStorage.getItem("user"))), "no session was created while locked");
   });
   await test("LOG-04.the_lock_cannot_be_dodged_with_another_window", "security", async () => {

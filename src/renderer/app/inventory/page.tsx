@@ -42,7 +42,7 @@ const STATUS_LABEL: Record<Status, string> = {
 const money = (v: string | number) => `$${Number(v).toFixed(2)}`;
 const when = (d: string | Date) => new Date(d).toLocaleString();
 
-const EMPTY_FORM = { sku: "", name: "", category: "", barcode: "", status: "active" as "active" | "inactive", price: "", stock: "0" };
+const EMPTY_FORM = { name: "", category: "", barcode: "", status: "active" as "active" | "inactive", price: "", stock: "0" };
 
 export default function InventoryPage() {
   const navigate = useNavigate();
@@ -117,13 +117,13 @@ export default function InventoryPage() {
   };
   const openEdit = (p: Product) => {
     setEditing(p);
-    setForm({ sku: p.sku, name: p.name, category: p.category ?? "", barcode: p.barcode ?? "", status: p.status === "inactive" ? "inactive" : "active", price: "", stock: "0" });
+    setForm({ name: p.name, category: p.category ?? "", barcode: p.barcode ?? "", status: p.status === "inactive" ? "inactive" : "active", price: "", stock: "0" });
     setFormOpen(true);
   };
 
   const saveProduct = async () => {
-    if (!form.sku.trim() || !form.name.trim()) {
-      toast.error("SKU y nombre son obligatorios");
+    if (!form.name.trim()) {
+      toast.error("El nombre es obligatorio");
       return;
     }
     if (!editing) {
@@ -141,7 +141,6 @@ export default function InventoryPage() {
       if (editing) {
         // stock and price are NOT editable here: they change through inventory movements / price changes
         await window.api.products.update(editing.id, {
-          sku: form.sku,
           name: form.name,
           category: form.category,
           barcode: form.barcode,
@@ -149,8 +148,7 @@ export default function InventoryPage() {
         });
         toast.success("Producto actualizado");
       } else {
-        await window.api.products.create({
-          sku: form.sku,
+        const created = await window.api.products.create({
           name: form.name,
           category: form.category,
           barcode: form.barcode,
@@ -158,7 +156,7 @@ export default function InventoryPage() {
           price: form.price.trim(),
           stock: Number(form.stock.trim() || "0"),
         });
-        toast.success("Producto creado");
+        toast.success(`Producto creado · SKU ${created.sku}`);
       }
       setFormOpen(false);
       await load();
@@ -375,7 +373,19 @@ export default function InventoryPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
-            {field("pf-sku", "SKU", <Input id="pf-sku" value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} />)}
+            {editing ? (
+              <div>
+                <label htmlFor="pf-sku" className="text-sm font-semibold block mb-1">
+                  SKU
+                </label>
+                <Input id="pf-sku" readOnly aria-readonly="true" value={editing.sku} className="font-mono bg-muted text-muted-foreground" />
+                <p className="text-xs text-muted-foreground mt-1">Lo asignó el sistema al crear el producto y no cambia.</p>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground" data-testid="sku-auto-note">
+                <span className="font-semibold text-foreground">SKU:</span> el sistema lo asigna al guardar (por ejemplo EL-000001). No hace falta capturarlo.
+              </p>
+            )}
             {field("pf-name", "Nombre", <Input id="pf-name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />)}
             {field("pf-category", "Categoría", <Input id="pf-category" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} />)}
             {field("pf-barcode", "Código de barras", <Input id="pf-barcode" value={form.barcode} onChange={(e) => setForm({ ...form, barcode: e.target.value })} />)}

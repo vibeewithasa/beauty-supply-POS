@@ -29,6 +29,7 @@ const userData = fs.mkdtempSync(path.join(os.tmpdir(), "pos-packaged-"));
 const log = (...a) => console.log(...a.map((x) => (typeof x === "string" ? scrub(x) : x)));
 
 let runDb, db, page;
+let madeSku = ""; // the SKU the system generated for the product PK-02 creates (0.8.2)
 const extraDbs = [];
 const roles = [];
 const launched = [];
@@ -114,14 +115,17 @@ try {
     await ui.nav(page, "Productos");
     await page.getByRole("button", { name: "Nuevo Producto" }).click();
     const d = page.getByRole("dialog");
-    const sku = `PKG-${runId}`;
-    await d.getByLabel("SKU", { exact: true }).fill(sku);
+    expect((await d.getByLabel("SKU", { exact: true }).count()) === 0, "no SKU field: the system generates it (0.8.2)");
     await d.getByLabel("Nombre", { exact: true }).fill("Producto empaquetado");
     await d.getByLabel("Precio inicial").fill("8.00");
     await d.getByLabel("Stock inicial").fill("4");
     await d.getByRole("button", { name: "Crear producto" }).click();
-    await page.getByRole("row", { name: new RegExp(sku) }).waitFor();
-    expect((await one("select stock from products where sku=$1", [sku])).stock === 4, "product persisted in PostgreSQL");
+    await page.locator("[data-sonner-toast]").filter({ hasText: /SKU EL-[0-9]{6,}/ }).first().waitFor({ timeout: 8000 });
+    const made = await one("select sku, stock from products where name='Producto empaquetado'");
+    expect(/^EL-[0-9]{6,}$/.test(made.sku), "generated SKU: " + made.sku);
+    madeSku = made.sku;
+    await page.getByRole("row", { name: new RegExp(made.sku) }).waitFor();
+    expect(made.stock === 4, "product persisted in PostgreSQL");
 
     await ui.openCash(page, 50);
     await ui.sell(page, { query: product.sku, name: product.name, qty: 2, method: "cash" });
@@ -240,7 +244,7 @@ try {
     await ui.login(page, admin.pin);
     await page.waitForURL(/#\/dashboard$/, { timeout: 10000 });
     await ui.nav(page, "Productos");
-    await page.getByRole("row", { name: new RegExp(`PKG-${runId}`) }).waitFor({ timeout: 8000 });
+    await page.getByRole("row", { name: new RegExp(madeSku) }).waitFor({ timeout: 8000 });
     await ui.logout(page);
   });
   await close(L);
@@ -353,14 +357,14 @@ try {
       await ui.nav(l.page, "Productos");
       await l.page.getByRole("button", { name: "Nuevo Producto" }).click();
       const d = l.page.getByRole("dialog");
-      const sku = "RT-" + runId;
-      await d.getByLabel("SKU", { exact: true }).fill(sku);
       await d.getByLabel("Nombre", { exact: true }).fill("Producto con rol mínimo");
       await d.getByLabel("Precio inicial").fill("3.50");
       await d.getByLabel("Stock inicial").fill("2");
       await d.getByRole("button", { name: "Crear producto" }).click();
-      await l.page.getByRole("row", { name: new RegExp(sku) }).waitFor({ timeout: 8000 });
-      expect((await one("select stock from products where sku=$1", [sku])).stock === 2, "the product was written with the runtime role");
+      await l.page.locator("[data-sonner-toast]").filter({ hasText: /SKU EL-[0-9]{6,}/ }).first().waitFor({ timeout: 8000 });
+      const rtp = await one("select sku, stock from products where name='Producto con rol mínimo'");
+      await l.page.getByRole("row", { name: new RegExp(rtp.sku) }).waitFor({ timeout: 8000 });
+      expect(rtp.stock === 2 && /^EL-[0-9]{6,}$/.test(rtp.sku), "the product and its generated SKU were written with the least-privilege runtime role: " + JSON.stringify(rtp));
       const who = await db.query("select distinct usename from pg_stat_activity where application_name='e2e_packaged_rt'");
       expect(who.rows.length >= 1 && who.rows.every((r) => r.usename === role), "the app's connections used the runtime role: " + JSON.stringify(who.rows));
     } finally { await close(l); fs.rmSync(ud, { recursive: true, force: true }); }

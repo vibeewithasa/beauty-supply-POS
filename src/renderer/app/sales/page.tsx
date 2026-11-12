@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { POSLayout } from "@/components/pos-layout";
 import { ReceiptDialog } from "@/components/receipt-dialog";
+import { Numpad } from "@/components/numpad";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -492,6 +493,7 @@ export default function SalesPage() {
                       <input
                         type="number"
                         min={1}
+                        data-numpad="integer"
                         aria-label={`Cantidad de ${item.name}`}
                         value={item.quantity}
                         onChange={(e) => {
@@ -604,7 +606,7 @@ export default function SalesPage() {
                 <label htmlFor="cash-received" className="text-sm font-semibold block">
                   Efectivo recibido <span className="font-normal text-muted-foreground">(opcional, para calcular el cambio)</span>
                 </label>
-                <Input id="cash-received" inputMode="decimal" autoComplete="off" placeholder="0.00" value={received} onChange={(e) => setReceived(e.target.value)} disabled={paying} className="h-12 text-lg" />
+                <Input id="cash-received" inputMode="decimal" data-numpad="decimal" autoComplete="off" placeholder="0.00" value={received} onChange={(e) => setReceived(e.target.value)} disabled={paying} className="h-12 text-lg" />
                 {receivedCents !== null && (
                   <p data-testid="change-due" className={`text-lg rounded p-2 text-center ${receivedCents >= totalCents ? "bg-green-50 text-green-800" : "bg-amber-50 text-amber-900"}`}>
                     {receivedCents >= totalCents ? (
@@ -687,6 +689,7 @@ export default function SalesPage() {
       </Dialog>
 
       <ReceiptDialog saleId={receiptSaleId} onClose={() => setReceiptSaleId(null)} />
+      <Numpad />
     </POSLayout>
   );
 }
