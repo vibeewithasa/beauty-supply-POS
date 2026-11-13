@@ -45,6 +45,14 @@ Con `npm run test:installer` (29), `npm run test:installer-app` (14), `npm run t
 
 Cosas que conviene decir con honestidad: el sistema es una versión de demostración sin firma de código; funciona sin Internet; la información de la demostración es ficticia; la impresora, el lector y la terminal bancaria reales se prueban en la siguiente etapa.
 
+## 0.8.2: comprobaciones adicionales antes de presentar
+
+Estas pruebas son **manuales** para la nueva versión; `npm run test:keypad` y `npm run test:sku` prueban los comportamientos automatizados, pero no demuestran compatibilidad con el lector ni con una pantalla táctil física.
+
+- [ ] **SKU automático:** con una base exclusivamente ficticia, crear un producto sin introducir SKU; verificar que aparece un identificador `EL-` generado, que no se puede editar después y que el código de barras opcional funciona de forma independiente. Reabrir Productos, buscar por el SKU y registrar una venta de prueba. Comprobar que los SKU previos permanecen intactos al actualizar desde una copia 0.8.1.
+- [ ] **Teclado opcional:** confirmar que está desactivado inicialmente; con un administrador ir a `Configuración → Este equipo`, habilitarlo y comprobar que aparece `123` en Vender. Capturar cantidad entera y efectivo con dos decimales, mover/minimizar el panel y verificarlo a 1024×768 y a la resolución real del equipo. Comprobar que no escribe en PIN ni en el buscador de códigos, que el teclado físico sigue funcionando, y que cambiar de usuario no modifica la preferencia del equipo.
+- [ ] **Integridad de actualización:** usar una instalación **desechable**, copia verificada fuera del equipo, y comprobar ventas, folios, PIN, configuración y SKU anteriores antes/después. La versión 0.8.2 no agrega migraciones; si Mantenimiento solicita cambios de esquema inesperados, detener la prueba y diagnosticarlo antes de continuar.
+
 ## D. Pruebas manuales en la laptop real (no automatizables aquí)
 
 Orden recomendado, con el resultado esperado. Anotar fecha y resultado. **Mientras estas pruebas no se hagan, el estado es "listo para integrar", no "listo para presentar autónomo".**
