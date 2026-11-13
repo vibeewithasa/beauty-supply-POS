@@ -51,7 +51,7 @@ Rules and risks:
 * **Fail-safe:** with no protected storage available nothing is saved (never a plain-text fallback); an existing file is left exactly as it was. A password that the
   current Windows account cannot decrypt (another user, another PC, a copied profile) opens the setup window with the data prefilled. `safeStorage` only works once the
   app is ready, so the database module is loaded after that (`main.ts`).
-* **Current 0.8.1 first launch:** without an existing connection configuration, the packaged app starts the **self-contained installation wizard** (demo or clean). An existing external-PostgreSQL configuration, including a migrated 0.7.0 `config.json`, continues through the external **connection setup window** rather than provisioning a new managed instance; the connection setup itself never migrates a database. A bad `DATABASE_URL` shows an explanation window instead. `"Beauty POS.exe" --reconfigure` is the explicit path for changing an externally managed database connection. Do not describe that connection setup as the default clean-install wizard.
+* **Current 0.8.2 first launch:** without an existing connection configuration, the packaged app starts the **self-contained installation wizard** (demo or clean). An existing external-PostgreSQL configuration, including a migrated 0.7.0 `config.json`, continues through the external **connection setup window** rather than provisioning a new managed instance; the connection setup itself never migrates a database. A bad `DATABASE_URL` shows an explanation window instead. `"Beauty POS.exe" --reconfigure` is the explicit path for changing an externally managed database connection. Do not describe that connection setup as the default clean-install wizard.
 * The connection string and password are redacted from logs and from errors that reach the renderer.
 
 First run: create the database in PostgreSQL, prepare its schema with the explicit command (`npm run db:migrate -- --apply
@@ -70,11 +70,13 @@ The full procedure is in `docs/PILOT_CHECKLIST.md`.
   owner's Windows was not authorized. Clean install, first start from an installed copy, Start Menu entry, uninstall and "PostgreSQL data preserved after uninstall" are **pending**
   (run them in a VM or a spare PC). The NSIS configuration is one-click, per-user. Installers are never published or distributed from this repository.
 
-## Self-contained installer (Sprint 07.1, version 0.8.0; 0.8.1 is the same installer with two screen fixes)
+## Self-contained installer (introduced in 0.8.0; retained in 0.8.2)
+
+The package configuration now declares **version `0.8.2`**. The original 0.8.0/0.8.1 installer architecture below remains relevant; 0.8.2 adds an optional, device-local numeric keypad and automatic SKU issuance **without a schema migration** (migrations remain 0000–0009). See `docs/STATUS.md` and `docs/TESTING.md` for the new behavior and its tests. Do **not** assume the old 0.8.1 installer SHA-256 or byte count applies to a newly packaged 0.8.2 executable.
 
 * `npm run package` now also carries a **PostgreSQL 18 package** (official EnterpriseDB binaries, pinned by SHA-256 in `scripts/postgresql-pin.json`, pruned, with the Visual C++ runtime DLLs
   next to them and a per-file hash manifest) as `resources\postgresql`. The package is fetched from the Internet **at build time only**, never when installing; `vendor/` is git-ignored (no binaries in Git).
-* The installer is `release/Estética Leal POS Setup 0.8.1.exe` (NSIS, one-click, per-user, no administrator, `appId` unchanged so 0.7.0 installs update in place). It is about 142 MiB.
+* The **expected output name** for the current package version is `release/Estética Leal POS Setup 0.8.2.exe` (`package.json` uses `${version}` for the artifact name). NSIS remains one-click and per-user with the same `appId`. Build and inspect the actual artifact before publishing a size or SHA-256; the old ~142 MiB estimate is not a verified measurement of 0.8.2.
 * With nothing configured, the first start opens the **installation wizard** (demonstration or clean) that creates a dedicated PostgreSQL instance under `%LOCALAPPDATA%\Estetica Leal POS`; an existing
   `config.json` (0.7.0 or an explicit external PostgreSQL) is respected and never triggers it. Details and decisions: `docs/SELF_CONTAINED_INSTALLER.md`; laptop guide: `docs/DEMO_INSTALL_LAPTOP.md`.
 * `resources\tools` also carries `Mantenimiento.cmd` (the maintenance window) and the 0.7.0 `Preparar-Base-Demo.cmd/.ps1` (for a PostgreSQL the operator installed separately).
