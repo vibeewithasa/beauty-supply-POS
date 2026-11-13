@@ -1,4 +1,6 @@
-# Estética Leal POS: instalación en una laptop con Windows (instalador autónomo 0.8.1)
+# Estética Leal POS: instalación en una laptop con Windows (guía de artefacto 0.8.1)
+
+> **Versión del repositorio: 0.8.2.** Esta guía documenta un **instalador 0.8.1 concreto** y su SHA-256 histórico. Si se presenta la versión actual, el archivo esperado pasa a llamarse `Estética Leal POS Setup 0.8.2.exe` tras `npm run package`. El tamaño y SHA-256 del 0.8.2 **no están establecidos en este documento**: calcularlos en la máquina de empaquetado, registrar la huella de **ese artefacto** y verificar la copia de la laptop contra ella por un canal independiente. **No usar el hash de 0.8.1 como el de 0.8.2**. Para el teclado y SKU nuevos, consultar `docs/STATUS.md` y `docs/DEMO_CHECKLIST.md`.
 
 Un solo archivo, **`Estética Leal POS Setup 0.8.1.exe`**, deja la aplicación lista para usar o para presentar. **No hay que instalar PostgreSQL, ni Node.js, ni correr scripts.**
 **Diseñado para funcionar sin Internet después de la instalación:** el paquete incluye PostgreSQL y las pruebas automatizadas no observaron solicitudes de red ajenas al equipo; **no se comprobó todavía una instalación y jornada completas con la laptop físicamente desconectada**. Antes de prometer una demostración independiente, completar también ese ensayo manual sin Wi-Fi ni Ethernet en un equipo de prueba (abrir, entrar, vender, cerrar caja, generar respaldo, cerrar y volver a abrir) y registrar cualquier dependencia inesperada. Arquitectura y motivos: `docs/SELF_CONTAINED_INSTALLER.md`.
@@ -23,7 +25,7 @@ Un solo archivo, **`Estética Leal POS Setup 0.8.1.exe`**, deja la aplicación l
 
 ## 1. Copiar el instalador
 
-Cópialo a la laptop con una memoria USB. Comprueba que no se dañó (PowerShell):
+Cópialo a la laptop con una memoria USB. Comprueba que no se dañó (PowerShell). El comando siguiente verifica **solo el artefacto histórico 0.8.1**. Para 0.8.2 sustituye el nombre por el del .exe realmente generado y usa la huella aprobada de **ese nuevo archivo**, nunca la de la tabla anterior:
 
 ```powershell
 Get-FileHash "$env:USERPROFILE\Downloads\Estética Leal POS Setup 0.8.1.exe" -Algorithm SHA256
