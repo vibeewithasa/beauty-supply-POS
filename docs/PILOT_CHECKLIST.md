@@ -8,7 +8,11 @@ Verdicts used in the reports (they are three different things):
 * **READY FOR PILOT**: the product may be tried in a controlled, supervised way on a prepared PC.
 * **READY FOR STORE**: installation, security, backups, hardware and daily operation meet what was agreed. **Not reached** (see the end).
 
-> **Deployment mode matters:** the steps below describe a *technician-managed external PostgreSQL* pilot from an earlier release, not the self-contained 0.8.1 first-run installer. For a laptop demonstration or clean local installation using the bundled database, use `docs/DEMO_INSTALL_LAPTOP.md` and `docs/DEMO_CHECKLIST.md`. Do not install a second PostgreSQL or run these manual schema commands against the installer's managed database.
+> **Deployment mode matters:** the steps below describe a *technician-managed external PostgreSQL* pilot from an earlier release, **not** the current self-contained 0.8.2 first-run installer. For a laptop demonstration or clean local installation using the bundled database, use `docs/DEMO_INSTALL_LAPTOP.md` and `docs/DEMO_CHECKLIST.md`. Do not install a second PostgreSQL or run these manual schema commands against the installer's managed database.
+
+## 0.8.2 migration and operator expectations
+
+The 0.8.2 release adds **automatic, immutable SKUs for new products** and a **device-local optional numeric keypad**; the old external-PostgreSQL pilot never verified these features. Before a real pilot, review the current `docs/STATUS.md` and `docs/TESTING.md`, create new test products **without providing an SKU**, ensure old/manual identifiers remain searchable, and test the keypad only in the intended numeric fields with a real scanner/keyboard. This release declares **no new schema migrations** (0000–0009 remain), but that is not a substitute for checking the actual existing database with the protected migration dry-run. Do not change an older stored SKU to mimic the new format.
 
 ## 1. Preparing a new PC
 
@@ -33,7 +37,7 @@ Verdicts used in the reports (they are three different things):
      $secure = $null
    }
    ```
-   `db:roles` reads `POS_RUNTIME_PASSWORD` from the process environment; do not pass the password as an argument or write it directly into PowerShell history. This is for a technician-managed external database, **not** the 0.8.1 self-contained first-run wizard.
+   `db:roles` reads `POS_RUNTIME_PASSWORD` from the process environment; do not pass the password as an argument or write it directly into PowerShell history. This is for a technician-managed external database, **not** the 0.8.2 self-contained first-run wizard.
 6. Install and start the application (the installer is unsigned, see the blockers below). With no configuration it opens the **first-run setup window**.
 
 ## 2. First start (setup window)
