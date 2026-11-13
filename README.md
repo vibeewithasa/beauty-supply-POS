@@ -8,6 +8,7 @@ A desktop point-of-sale (POS) application for beauty supply distributors. Built 
 
 ### Sales
 - Product search by name, SKU, or barcode
+- Automatic, immutable SKU (`EL-` plus the database product ID) for **new** products in 0.8.2; existing SKUs remain unchanged and barcodes stay optional
 - Shopping cart with quantity management
 - Cash and card payment workflows
 - Sales receipts and inventory updates
@@ -52,7 +53,7 @@ Physical printer, barcode scanner, touch-screen, and card-terminal integration s
 
 **Developing from source** requires Windows, Node.js and npm compatible with `package.json`, and a local PostgreSQL instance configured in `.env`.
 
-**Installing the 0.8.1 Windows application** is different: the self-contained installer includes a dedicated PostgreSQL 18 instance and does not require a separate Node.js or PostgreSQL installation. It runs locally and offline after installation. The packaged installer has been rehearsed against an isolated PostgreSQL instance, but installing and uninstalling the NSIS executable on a clean Windows laptop still needs manual verification. See [laptop installation](docs/DEMO_INSTALL_LAPTOP.md).
+**Installing the current 0.8.2 Windows application** is different: the self-contained installer includes a dedicated PostgreSQL 18 instance and does not require a separate Node.js or PostgreSQL installation. It runs locally and offline after installation. The packaged installer has been rehearsed against an isolated PostgreSQL instance, but installing and uninstalling the NSIS executable on a clean Windows laptop still needs manual verification. See [laptop installation](docs/DEMO_INSTALL_LAPTOP.md).
 
 ## Getting started
 
@@ -131,6 +132,8 @@ Key source directories:
 - This README is a project overview, not a security certification.
 
 ## Demonstration on a laptop
+
+Version **0.8.2** also adds an optional floating numeric keypad for cart quantity and cash-received entry. An administrator enables it under **Configuración → Este equipo**; the setting applies to that Windows profile, is **off by default**, and does not replace the physical keyboard, PIN input or barcode search. See [feature status](docs/STATUS.md#version-082-optional-numeric-keypad-and-automatic-sku-sprint-08a) and [test coverage](docs/TESTING.md). Physical touch hardware and scanners still require manual validation.
 
 `npm run package` builds a **self-contained** Windows installer (`release/Estética Leal POS Setup <version>.exe`): it carries a pinned official PostgreSQL and its first-start wizard prepares a dedicated,
 local-only database (demonstration or clean) with no manual PostgreSQL work. `docs/DEMO_INSTALL_LAPTOP.md` is the laptop guide, `docs/SELF_CONTAINED_INSTALLER.md` the architecture and `docs/DEMO_CHECKLIST.md`
