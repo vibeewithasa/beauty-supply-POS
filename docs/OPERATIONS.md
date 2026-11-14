@@ -118,7 +118,7 @@ call "C:\Projects\beauty-supply-POS\scripts\db-backup-task.cmd"
 exit /b %ERRORLEVEL%
 ```
 
-Replace the example paths with the real ones and protect the wrapper from unauthorized edits. After scheduling, run `schtasks /Run /TN "Beauty POS backup"` and verify both `task.log` and `backup.log` show `second=verified`, **not** merely that a primary dump exists. This procedure concerns a source-based/external-PostgreSQL installation; the 0.8.1 managed instance has no automatic backup scheduler yet.
+Replace the example paths with the real ones and protect the wrapper from unauthorized edits. After scheduling, run `schtasks /Run /TN "Beauty POS backup"` and verify both `task.log` and `backup.log` show `second=verified`, **not** merely that a primary dump exists. This procedure concerns a source-based/external-PostgreSQL installation. The current **0.8.2 self-contained managed instance** still has **no automatic backup scheduler**; operator-triggered backups belong to its Maintenance window. A scheduled job set up for an external `DATABASE_URL` must not be assumed to protect the managed cluster. See `docs/SELF_CONTAINED_INSTALLER.md` and verify an independent second copy before relying on the backups.
 
 Requirements: Node.js on the machine, the project folder with `node_modules`, `.env` with `DATABASE_URL`, and the PostgreSQL
 client tools (`pg_dump`/`pg_restore`; or set `POS_PG_BIN`). Check `task.log` and `backup.log` regularly: a failed run is
