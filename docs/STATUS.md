@@ -52,8 +52,7 @@ Documentation-only corrections do not rerun the test suites. For a new release, 
 
 ## Decisions still pending (product)
 
-- Who may read the full sales history and process returns (`sales:getAll`, `sales:getById`, `returns:*` are open
-  to any signed-in user today).
+- **Who may initiate and inspect returns across sellers:** `returns:getAll`, `returns:getSaleForReturn` and `returns:create` remain accessible to any signed-in user; an administrator PIN is required to **pay** a refund. The newer `sales:list`, `sales:getDetail`, `receipts:preview` and `receipts:print` channels **do restrict vendors to their own sales** (see Contracts above). Do not describe all `sales:*` or `returns:*` channels as universally accessible. The owner must decide whether the remaining cross-seller return access is appropriate.
 - (decided in Sprint 05) How a pending refund is settled: cash from the register or card terminal, approved with an administrator PIN. Still open: how to
   resolve `legacy_unspecified` returns (the POS refuses to pay them: it cannot know whether they were already paid).
 - Whether each user has their own register (today one shared register).
