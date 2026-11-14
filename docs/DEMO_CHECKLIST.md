@@ -43,7 +43,7 @@ Con `npm run test:installer` (29), `npm run test:installer-app` (14), `npm run t
 13. **Tablero.** Ventas del día, productos con poco stock, reembolsos pendientes.
 14. **Usuarios y Configuración.** Usuarios (PIN de 6 a 8 dígitos, nunca se muestran). Configuración: datos del negocio para el ticket (**vacíos a propósito**: preguntar al dueño qué datos desea imprimir; no se inventó ninguno).
 
-Cosas que conviene decir con honestidad: el sistema es una versión de demostración sin firma de código; funciona sin Internet; la información de la demostración es ficticia; la impresora, el lector y la terminal bancaria reales se prueban en la siguiente etapa.
+Cosas que conviene decir con honestidad: el sistema es una versión de demostración sin firma de código; **está diseñado para funcionar sin Internet** con su PostgreSQL local, pero una jornada completa en una laptop físicamente desconectada **sigue pendiente de comprobarse** (ver `docs/DEMO_INSTALL_LAPTOP.md`); los datos de demostración son ficticios; la impresora, el lector y la terminal bancaria reales se prueban en la siguiente etapa. Antes de prometer una presentación sin conectividad, probar en la laptop, sin Wi-Fi ni Ethernet, iniciar sesión, vender, cerrar caja, generar un respaldo y reiniciar la aplicación, documentando el resultado.
 
 ## 0.8.2: comprobaciones adicionales antes de presentar
 
