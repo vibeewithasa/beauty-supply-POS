@@ -52,7 +52,7 @@ database is ever written to, overwritten or dropped.
 | `npm run test:legacy` | restores the newest validated backup of the owner's data into a NEW database, applies 0007-0009 with the explicit commands, proves the old data survived and runs the packaged app on it (SKIP, never PASS, when there is no backup or no package) | yes + package |
 | `npm run test:migrations` | migrations from empty and legacy DBs (0007/0008/0009), precheck, drift, the app only verifies the schema (empty / behind / newer / unreachable), the explicit `db:migrate` command | yes |
 | `npm run test:ops` | verified backups, restore into a new database (row-by-row comparison), retention, safe errors, Task Scheduler wrapper, least-privilege role (OPS-14: it can draw product SKUs from the id sequence and cannot rewind or alter it) | yes |
-| `npm run test:all` | unit + every Electron suite + migrations + ops + legacy + installer provisioning | yes |
+| `npm run test:all` | unit + development Electron suites selected by `e2e/run.mjs all` + migrations + ops + legacy + installer provisioning; **not** standalone `test:packaged`, `test:installer-app` or `test:demo` | yes |
 | `npm run db:precheck` | read-only pre-flight for the integrity migrations (see below) | DB only |
 
 ## What `test:all` does not certify
