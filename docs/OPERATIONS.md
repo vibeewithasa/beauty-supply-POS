@@ -3,13 +3,12 @@
 Everything here was exercised by `npm run test:migrations`, `npm run test:ops` and `npm run test:packaged` on
 throwaway databases (`beauty_pos_e2e_*`) and test roles that those runs create and remove.
 
-## The three rules
+## The three rules (source-based / external PostgreSQL mode)
 
-1. **The application never changes a database schema.** At startup it only checks (with `SELECT`s) that the database has
-   exactly the migrations this version requires. If not, it shows a plain explanation and registers no operation at all
-   (no login, no sales). It never creates tables, never runs a migration, even on an empty database.
-2. **A schema is changed only by an explicit command** (`npm run db:migrate -- --apply --confirm-database=<name>`), after a
-   precheck and a verified backup.
+The commands below manage **an explicitly connected external PostgreSQL database**. They do **not** describe the first-run provisioning or Maintenance window of the **0.8.2 self-contained installation**; that separate workflow can create its own isolated database and apply approved schema updates after a verified backup (`docs/SELF_CONTAINED_INSTALLER.md`). Never run these development migration commands against the managed cluster or mistake opening the app for permission to update a schema.
+
+1. **Normal startup against an already configured external database does not migrate its schema.** The app checks (with `SELECT`s) that the database has exactly the migrations this version requires; missing or newer schema versions produce an explanatory window, without creating tables or accepting logins/sales. **The distinct managed first-run wizard is not covered by this statement.**
+2. **An external database schema is changed only by an explicit reviewed command** (`npm run db:migrate -- --apply --confirm-database=<name>`), after preflight and a verified backup. The managed instance uses its **own** Maintenance flow.
 3. **Restores only create a new database.** Nothing in this repository drops, overwrites or restores over an existing
    database (the only `DROP DATABASE` calls are in the tests, on databases the test itself created).
 
