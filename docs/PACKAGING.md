@@ -83,6 +83,18 @@ The package configuration now declares **version `0.8.2`**. The original 0.8.0/0
 * Tests that need the installer: `npm run test:installer-app` (extracts it and drives the wizard through the real UI), `npm run test:demo` (the external-PostgreSQL rehearsal), both without installing anything.
   The NSIS install/uninstall themselves still require a real Windows machine.
 
+## Release-signing handoff (not executed)
+
+A packaging build completing successfully is **not a signed release**. Before any distribution to a real store, the release owner needs to identify the exact executable and NSIS installer produced for that build, verify their **publisher signatures separately**, register the build identifier and SHA-256 and arrange a safe delivery channel. On the **Windows build machine**, after a reviewed signing operation, a technician can inspect the actual files with PowerShell:
+
+```powershell
+Get-AuthenticodeSignature '.\release\win-unpacked\Beauty POS.exe' | Select-Object Status, StatusMessage, SignerCertificate
+Get-AuthenticodeSignature '.\release\Estética Leal POS Setup 0.8.2.exe' | Select-Object Status, StatusMessage, SignerCertificate
+Get-FileHash '.\release\Estética Leal POS Setup 0.8.2.exe' -Algorithm SHA256
+```
+
+Replace version/paths according to the **actual** generated release. Both signatures must be valid and correspond to the expected trusted publisher; do not report `NotSigned` or an untrusted certificate as success. Compare the installer hash again on the receiving machine through an **independent trusted channel**. Keep the certificate/private key out of Git, the package and logs. Record Windows install/uninstall and SmartScreen behavior on disposable hardware; signature inspection alone does not verify the full install path. **No signing, packaging or external distribution was performed as part of this documentation.**
+
 ## Known external blockers
 
 * **Code signing:** the installer and exe are unsigned in the documented test builds, so Windows SmartScreen may warn and
