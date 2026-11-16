@@ -72,6 +72,12 @@ touched and nothing is marked as paid. `returns.refund_status = 'paid'` is only 
 - Reports use the settlement, never the movement text. A refund paid in cash is **not** a manual withdrawal: summaries exclude movements
   that back a settlement from "Retiros".
 
+## Checklist operativo: reembolso externo por tarjeta
+
+El POS **no se conecta a la terminal bancaria**: marcar `PAGADO POR TARJETA` es una declaración del operador, no un comprobante de transferencia. Antes de confirmar ese estado en una tienda real, el responsable debe verificar en la terminal o en el proveedor de pagos que el reembolso de **esa venta e importe** realmente se aceptó, conservar la referencia/comprobante según la política autorizada y evitar exponer números completos de tarjetas en notas, capturas, logs o Git.
+
+Si la terminal está desconectada, la operación se rechazó o el resultado es incierto, **no confirmar un reembolso pagado** solo para terminar la pantalla: mantenerlo pendiente, reconciliar primero con el proveedor y verificar el historial del POS antes de cualquier reintento. Una vez confirmado externamente, registrar la forma de pago y obtener autorización mediante PIN administrativo; si la respuesta del POS se pierde, investigar su estado y reutilizar el **mismo `operationId`** para la misma operación, nunca entregar dinero dos veces. Este procedimiento requiere decisión del dueño y pruebas en la terminal real; las suites automatizadas solo simulan el canal externo.
+
 ## Concurrency and idempotency
 
 Lock order, shared by every flow: operation advisory lock -> cash session -> sale -> sale_items (ascending id) -> products (ascending id)
