@@ -86,7 +86,7 @@ En la misma ventana de Mantenimiento:
 | Otro programa tomó el puerto | La aplicación elige sola otro puerto libre y actualiza su configuración. |
 | "Los archivos de PostgreSQL de esta instalación no son los originales" | Un antivirus o una persona modificó la copia. Reinstala la aplicación (el instalador restituye el paquete) y abre de nuevo; los datos no se tocan. |
 | "La contraseña … no se puede leer con esta cuenta de Windows" | La configuración está protegida para la cuenta de Windows que instaló. Entra con esa cuenta; con otra cuenta use *Usar un PostgreSQL que ya tengo* o restaure un respaldo. |
-| SmartScreen bloquea el instalador | Más información → Ejecutar de todas formas (falta firma de código). |
+| SmartScreen bloquea el instalador | **No omitas el aviso automáticamente.** Detén la instalación y verifica la procedencia por un canal confiable y que el SHA-256 corresponde exactamente al **artefacto aprobado de esa versión** (el de 0.8.1 no sirve para 0.8.2). Investiga cualquier discrepancia, alerta del antivirus o firma inesperada. Solo el responsable de una prueba controlada, tras esas verificaciones y evaluación del riesgo de un instalador sin firma, puede decidir si lo ejecuta. Consultar los pasos 1 y 2; nunca desactivar SmartScreen para todos los programas. |
 | PIN incorrecto repetido | Tras varios intentos fallidos el sistema se bloquea un rato; espera y reintenta. El bloqueo no se pierde reiniciando. |
 
 ## 8. Actualizar la aplicación sin perder datos
