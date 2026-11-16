@@ -39,11 +39,7 @@ empty database needs neither. A database from a *newer* version is refused.
 
 ### What to do with the owner's `beauty_pos`
 
-Read-only inspection on 2026-10-30 (before this sprint changed anything) showed `beauty_pos` at **7 applied migration rows =
-migrations 0000-0006**, with the owner's own manual-test data (9 sales, 3 cash sessions). Migration **0007** (sales history,
-receipts, settings), **0008** (cash movement sale link, used by the register history) and, since Sprint 05, **0009** (refund ledger,
-`refund_settlements`) are **pending**. With this version,
-opening the POS on it shows the "needs updating" window and changes nothing. Update it deliberately:
+**Historic snapshot, not a current inspection:** the read-only check on **2026-10-30** found `beauty_pos` with seven applied migrations (`0000`–`0006`) and test data (9 sales, 3 cash sessions). At that time `0007` (sales history/receipts/settings), `0008` (cash movement link) and `0009` (refund ledger) had not been applied. **Do not assume they are still pending today** or use those counts to approve an update. Confirm the exact local database and role, check `npm run db:status` and run the protected `npm run db:migrate` **dry-run**, preserve a verified independent backup, and resolve every blocker before obtaining explicit approval for `--apply`. The 0.8.2 source has no new schema migrations beyond `0009`; never invoke external-PostgreSQL migration scripts against the installer-managed cluster. Historical reproduction evidence remains below. Example commands for a separately approved external-database update:
 
 ```bash
 npm run db:migrate                                          # review the plan
