@@ -72,6 +72,12 @@ touched and nothing is marked as paid. `returns.refund_status = 'paid'` is only 
 - Reports use the settlement, never the movement text. A refund paid in cash is **not** a manual withdrawal: summaries exclude movements
   that back a settlement from "Retiros".
 
+## Checklist operativo: reembolso en efectivo sin caja suficiente
+
+Para registrar un reembolso **en efectivo**, el backend exige una caja abierta con saldo disponible; si no alcanza, la operación se rechaza **sin pagar ni descontar parcialmente** el importe. El dinero de una devolución no se debe confundir con un movimiento manual de salida: el reembolso confirmado crea su propio movimiento vinculado a `refund_settlements` y queda reflejado una sola vez en el arqueo.
+
+Si se presenta falta de saldo, el operador debe **dejar el reembolso pendiente**, revisar el saldo efectivo de la caja y avisar a la persona administradora. No crear un ingreso ficticio, alterar un movimiento anterior, confirmar un pago no entregado ni repetir la devolución original para intentar liberar fondos. Si el cliente acepta un método distinto, verificar primero que la política del negocio permite ese método y seguir el flujo correspondiente, con confirmación externa de la terminal cuando sea tarjeta. Antes de intentar nuevamente el pago, comprobar en el historial que el reembolso continúa pendiente y usar la clave de operación correspondiente según el resultado conocido o incierto. **No se ejecutó un ensayo con dinero real** al redactar esta guía.
+
 ## Checklist operativo: reembolso externo por tarjeta
 
 El POS **no se conecta a la terminal bancaria**: marcar `PAGADO POR TARJETA` es una declaración del operador, no un comprobante de transferencia. Antes de confirmar ese estado en una tienda real, el responsable debe verificar en la terminal o en el proveedor de pagos que el reembolso de **esa venta e importe** realmente se aceptó, conservar la referencia/comprobante según la política autorizada y evitar exponer números completos de tarjetas en notas, capturas, logs o Git.
