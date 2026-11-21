@@ -24,7 +24,9 @@ Documentation-only corrections do not rerun the test suites. For a new release, 
 | Users: create/update/deactivate, unique PIN, last-admin protection | implemented and tested (existing users page) |
 | Dashboard: sales, cash, refunds owed vs paid in cash vs paid by card (by payment date) | implemented and tested |
 | Reports (`/reports`, admin): gross sales, by payment method, top products, returns by refund status, local CSV export; dates validated in main (max 366 days). No profit/cost/tax figures (not recorded) | implemented and tested |
-| Thermal-printer hardware validation, barcode reader, touch screen, CFDI/fiscal invoicing, off-site backups | **not implemented / not tested on hardware** |
+| Physical thermal printer, barcode reader, and touch-screen validation | **not yet verified on actual store hardware**. Print-to-PDF, keyboard-wedge and simulated touch tests are not substitutes for device testing. |
+| CFDI / fiscal invoicing | **not implemented**; commercial receipts and vouchers are non-fiscal. |
+| Backup destinations | An operator-selected **verified second copy on USB or a LAN folder** is implemented for the **external PostgreSQL / source-based** workflow (`test:ops`); this is **not an automatic cloud/off-site backup service**, and the **self-contained managed instance** still requires operator-initiated Maintenance backups and independent copy verification. |
 | Packaged Windows app (unpacked build, `npm run package:dir`) | works: window, login, every module, sale/cash/return/report, close and reopen, protected configuration, setup window, verified by `npm run test:packaged` (see `docs/PACKAGING.md`). **The NSIS installer was generated (unsigned) and its payload compared, but NOT installed/uninstalled (no disposable Windows environment); auto-update disabled** |
 
 ## Contracts worth knowing
