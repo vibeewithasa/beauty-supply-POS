@@ -136,7 +136,7 @@ To use a recovered copy with an **externally managed** PostgreSQL: stop the POS,
 | Situation | What to do |
 |---|---|
 | The POS says the database needs updating | Normal after installing a newer version: back up, `db:migrate` dry run, then `--apply` |
-| The POS says the database is newer | You are running an older app: install the current version. Do not "fix" the database |
+| The POS says the database is newer | **Stop and preserve the data.** Identify the actual database, current application build and applied migration history with read-only diagnostics. Choose a release **explicitly compatible** with that schema, after verifying its origin; simply downloading the latest available installer is not proof of compatibility. Never downgrade the schema, remove migration rows or restore an older dump in place to suppress the warning. If no verified compatible build is available, escalate the mismatch before reopening the POS. |
 | `db:migrate --apply` fails | Nothing half-applied (one transaction). The verified pre-migration backup path is printed; restore it into a new database if needed |
 | Wrong data written / disaster | Stop the POS, restore the latest verified backup into a new database, point the POS at it |
 | Backup task fails | Read `backup.log`/`task.log`; typical causes: PostgreSQL stopped, wrong credentials, disk full, missing `pg_dump` (set `POS_PG_BIN`) |
