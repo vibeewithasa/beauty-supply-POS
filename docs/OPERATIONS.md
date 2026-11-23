@@ -135,7 +135,7 @@ To use a recovered copy with an **externally managed** PostgreSQL: stop the POS,
 
 | Situation | What to do |
 |---|---|
-| The POS says the database needs updating | Normal after installing a newer version: back up, `db:migrate` dry run, then `--apply` |
+| The POS says the database needs updating | **Stop normal operations and identify the exact installation mode first.** For **external PostgreSQL** only, verify the database name and current schema with read-only commands, capture a backup and **independently verified second copy**, run `npm run db:migrate` as a dry run, review each proposed migration and obtain explicit authorization **before** `--apply --confirm-database=<name>`. A warning may also indicate the wrong connection or an incompatible release; do not call it a routine update. For **0.8.2 self-contained**, follow the managed Maintenance workflow, **not** these source-based commands. |
 | The POS says the database is newer | **Stop and preserve the data.** Identify the actual database, current application build and applied migration history with read-only diagnostics. Choose a release **explicitly compatible** with that schema, after verifying its origin; simply downloading the latest available installer is not proof of compatibility. Never downgrade the schema, remove migration rows or restore an older dump in place to suppress the warning. If no verified compatible build is available, escalate the mismatch before reopening the POS. |
 | `db:migrate --apply` fails | Nothing half-applied (one transaction). The verified pre-migration backup path is printed; restore it into a new database if needed |
 | Wrong data written / disaster | Stop the POS, restore the latest verified backup into a new database, point the POS at it |
